@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Claude Terminal</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            background: #1a1b26;
+            color: #c0caf5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            height: 40px;
+            background: #24283b;
+            border-bottom: 1px solid #414868;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            justify-content: space-between;
+        }
+        
+        .header h1 {
+            font-size: 0.9rem;
+            color: #7aa2f7;
+        }
+        
+        .terminal-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #1a1b26;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .input-container {
+            display: flex;
+            padding: 0.5rem;
+            background: #24283b;
+            border-top: 1px solid #414868;
+        }
+        
+        .input-field {
+            flex: 1;
+            background: #1a1b26;
+            color: #c0caf5;
+            border: 1px solid #414868;
+            padding: 0.5rem;
+            font-family: inherit;
+            font-size: 14px;
+            border-radius: 0.25rem;
+        }
+        
+        .send-btn {
+            margin-left: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: #7aa2f7;
+            color: #1a1b26;
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .send-btn:hover {
+            background: #9ece6a;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #f7768e;
+            border-radius: 50%;
+        }
+        
+        .status-dot.connected {
+            background: #9ece6a;
+        }
+        
+        .output-line {
+            margin: 0;
+            white-space: pre-wrap;
+        }
+        
+        /* ANSI color support */
+        .ansi-black { color: #414868; }
+        .ansi-red { color: #f7768e; }
+        .ansi-green { color: #9ece6a; }
+        .ansi-yellow { color: #e0af68; }
+        .ansi-blue { color: #7aa2f7; }
+        .ansi-magenta { color: #bb9af7; }
+        .ansi-cyan { color: #7dcfff; }
+        .ansi-white { color: #c0caf5; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Claude Terminal</h1>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </div>
+    
+    <div class="terminal-container" id="terminal"></div>
+    
+    <div class="input-container">
+        <input type="text" class="input-field" id="inputField" placeholder="Type your message...">
+        <button class="send-btn" onclick="sendInput()">Send</button>
+    </div>
+    
+    <script>
+        const socket = io();
+        const terminal = document.getElementById('terminal');
+        const inputField = document.getElementById('inputField');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        
+        let isConnected = false;
+        
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            isConnected = true;
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected';
+            
+            // Start Claude session
+            socket.emit('start_terminal', {
+                project_path: '~/projects'
+            });
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            isConnected = false;
+            statusDot.classList.remove('connected');
+            statusText.textContent = 'Disconnected';
+            appendOutput('\n[Disconnected from server]\n', 'ansi-red');
+        });
+        
+        socket.on('terminal_ready', (data) => {
+            console.log('Terminal ready:', data);
+            appendOutput('Claude session started. Type your message and press Enter.\n\n', 'ansi-green');
+        });
+        
+        socket.on('terminal_output', (data) => {
+            appendOutput(data.data);
+        });
+        
+        socket.on('terminal_error', (data) => {
+            appendOutput(`\nError: ${data.message}\n`, 'ansi-red');
+        });
+        
+        function appendOutput(text, className = '') {
+            const line = document.createElement('span');
+            line.className = `output-line ${className}`;
+            line.textContent = text;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+        
+        function sendInput() {
+            const input = inputField.value;
+            if (!input.trim()) return;
+            
+            if (isConnected) {
+                // Send input with newline
+                socket.emit('terminal_input', {
+                    input: input + '\n'
+                });
+                
+                // Show what was sent
+                appendOutput('> ' + input + '\n', 'ansi-cyan');
+                
+                inputField.value = '';
+            } else {
+                appendOutput('Not connected to server\n', 'ansi-red');
+            }
+        }
+        
+        // Handle Enter key
+        inputField.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendInput();
+            }
+        });
+        
+        // Focus input on load
+        inputField.focus();
+        
+        // Keep focus on mobile
+        document.addEventListener('click', () => {
+            if (window.innerWidth <= 768) {
+                inputField.focus();
+            }
+        });
+    </script>
+</body>
+</html>

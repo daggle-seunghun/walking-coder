@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Claude Terminal</title>
+    
+    <!-- xterm.js -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-webgl@0.16.0/lib/xterm-addon-webgl.js"></script>
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    
+    <style>
+        :root {
+            --safe-area-top: env(safe-area-inset-top, 0px);
+            --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+            --header-height: 50px;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1b26;
+            color: #c0caf5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .header {
+            height: var(--header-height);
+            background: #24283b;
+            border-bottom: 1px solid #414868;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            padding-top: var(--safe-area-top);
+            flex-shrink: 0;
+        }
+        
+        .header h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #7aa2f7;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn {
+            padding: 0.375rem 0.75rem;
+            background: #414868;
+            color: #c0caf5;
+            border: none;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover {
+            background: #565f89;
+        }
+        
+        .btn.active {
+            background: #7aa2f7;
+            color: #1a1b26;
+        }
+        
+        .terminal-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #1a1b26;
+        }
+        
+        #terminal {
+            flex: 1;
+            padding: 0.5rem;
+        }
+        
+        .project-bar {
+            height: 40px;
+            background: #24283b;
+            border-bottom: 1px solid #414868;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            font-size: 0.875rem;
+            color: #9ece6a;
+        }
+        
+        .project-bar .path {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            opacity: 0.8;
+        }
+        
+        .status-bar {
+            height: 30px;
+            background: #24283b;
+            border-top: 1px solid #414868;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            font-size: 0.75rem;
+            color: #565f89;
+            padding-bottom: var(--safe-area-bottom);
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            background: #f7768e;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+        
+        .status-indicator.connected {
+            background: #9ece6a;
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1rem;
+            }
+            
+            .btn {
+                padding: 0.5rem;
+                font-size: 0.75rem;
+            }
+            
+            #terminal {
+                padding: 0.25rem;
+            }
+        }
+        
+        /* Override xterm.js styles for better mobile experience */
+        .xterm {
+            cursor: text;
+            position: relative;
+            user-select: none;
+            -ms-user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        .xterm.focus,
+        .xterm:focus {
+            outline: none;
+        }
+        
+        .xterm .xterm-helpers {
+            position: absolute;
+            top: 0;
+            z-index: 5;
+        }
+        
+        .xterm .xterm-helper-textarea {
+            padding: 0;
+            border: 0;
+            margin: 0;
+            position: absolute;
+            opacity: 0;
+            left: -9999em;
+            top: 0;
+            width: 0;
+            height: 0;
+            z-index: -5;
+            white-space: nowrap;
+            overflow: hidden;
+            resize: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Claude Terminal</h1>
+        <div class="controls">
+            <button class="btn" onclick="toggleFullscreen()">Fullscreen</button>
+            <button class="btn" onclick="clearTerminal()">Clear</button>
+            <button class="btn" id="connectBtn" onclick="toggleConnection()">Connect</button>
+        </div>
+    </div>
+    
+    <div class="project-bar">
+        <span>Working in: </span>
+        <span class="path" id="projectPath">~/projects</span>
+    </div>
+    
+    <div class="terminal-container">
+        <div id="terminal"></div>
+    </div>
+    
+    <div class="status-bar">
+        <div>
+            <span class="status-indicator" id="statusIndicator"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+        <div id="terminalSize">80x24</div>
+    </div>
+    
+    <script>
+        // Initialize xterm.js
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
+            theme: {
+                background: '#1a1b26',
+                foreground: '#c0caf5',
+                cursor: '#c0caf5',
+                cursorAccent: '#1a1b26',
+                selection: '#364a82',
+                black: '#414868',
+                red: '#f7768e',
+                green: '#9ece6a',
+                yellow: '#e0af68',
+                blue: '#7aa2f7',
+                magenta: '#bb9af7',
+                cyan: '#7dcfff',
+                white: '#c0caf5',
+                brightBlack: '#565f89',
+                brightRed: '#f7768e',
+                brightGreen: '#9ece6a',
+                brightYellow: '#e0af68',
+                brightBlue: '#7aa2f7',
+                brightMagenta: '#bb9af7',
+                brightCyan: '#7dcfff',
+                brightWhite: '#c0caf5'
+            },
+            allowTransparency: false,
+            scrollback: 10000,
+            convertEol: true,
+            rendererType: 'canvas'
+        });
+        
+        // Add addons
+        const fitAddon = new FitAddon.FitAddon();
+        const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+        
+        term.loadAddon(fitAddon);
+        term.loadAddon(webLinksAddon);
+        
+        // Try to use WebGL renderer for better performance
+        try {
+            const webglAddon = new WebglAddon.WebglAddon();
+            webglAddon.onContextLoss(() => {
+                webglAddon.dispose();
+            });
+            term.loadAddon(webglAddon);
+        } catch (e) {
+            console.warn('WebGL renderer not available, using canvas');
+        }
+        
+        // Open terminal in container
+        term.open(document.getElementById('terminal'));
+        
+        // Fit terminal to container
+        function fitTerminal() {
+            fitAddon.fit();
+            const dims = fitAddon.proposeDimensions();
+            if (dims && socket && socket.connected) {
+                socket.emit('terminal_resize', {
+                    rows: dims.rows,
+                    cols: dims.cols
+                });
+                document.getElementById('terminalSize').textContent = `${dims.cols}x${dims.rows}`;
+            }
+        }
+        
+        // Socket.IO connection
+        let socket = null;
+        let isConnected = false;
+        
+        function connect() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                updateStatus(true);
+                
+                // Get project path from URL params or use default
+                const urlParams = new URLSearchParams(window.location.search);
+                const projectPath = urlParams.get('path') || '~/projects';
+                document.getElementById('projectPath').textContent = projectPath;
+                
+                // Start terminal session
+                socket.emit('start_terminal', { project_path: projectPath });
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                updateStatus(false);
+                term.write('\r\n\x1b[31mDisconnected from server\x1b[0m\r\n');
+            });
+            
+            socket.on('terminal_ready', () => {
+                term.clear();
+                term.focus();
+                fitTerminal();
+            });
+            
+            socket.on('terminal_output', (data) => {
+                term.write(data.data);
+            });
+            
+            socket.on('terminal_error', (data) => {
+                term.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
+            });
+            
+            // Send input to server
+            term.onData((data) => {
+                if (socket && socket.connected) {
+                    socket.emit('terminal_input', { input: data });
+                }
+            });
+        }
+        
+        function disconnect() {
+            if (socket) {
+                socket.emit('stop_terminal');
+                socket.disconnect();
+                socket = null;
+            }
+        }
+        
+        function toggleConnection() {
+            const btn = document.getElementById('connectBtn');
+            if (isConnected) {
+                disconnect();
+                btn.textContent = 'Connect';
+                btn.classList.remove('active');
+            } else {
+                connect();
+                btn.textContent = 'Disconnect';
+                btn.classList.add('active');
+            }
+        }
+        
+        function updateStatus(connected) {
+            isConnected = connected;
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+            
+            if (connected) {
+                indicator.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                indicator.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+        
+        function clearTerminal() {
+            term.clear();
+        }
+        
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            fitTerminal();
+        });
+        
+        // Initial fit
+        setTimeout(() => {
+            fitTerminal();
+        }, 100);
+        
+        // Auto-connect on load
+        connect();
+        
+        // Handle mobile keyboard
+        if ('visualViewport' in window) {
+            window.visualViewport.addEventListener('resize', () => {
+                fitTerminal();
+            });
+        }
+    </script>
+</body>
+</html>

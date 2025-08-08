@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Claude Interactive Terminal</title>
+    
+    <!-- xterm.js for terminal emulation -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1b26;
+            color: #c0caf5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .header {
+            height: 50px;
+            background: #24283b;
+            border-bottom: 1px solid #414868;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .header h1 {
+            font-size: 1.2rem;
+            color: #7aa2f7;
+            font-weight: 600;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            background: #414868;
+            color: #c0caf5;
+            border: none;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover {
+            background: #565f89;
+        }
+        
+        .btn.primary {
+            background: #7aa2f7;
+            color: #1a1b26;
+        }
+        
+        .btn.primary:hover {
+            background: #9ece6a;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #terminal-container {
+            flex: 1;
+            background: #1a1b26;
+            padding: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .status-bar {
+            height: 30px;
+            background: #24283b;
+            border-top: 1px solid #414868;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            font-size: 0.75rem;
+            color: #565f89;
+            gap: 1rem;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #f7768e;
+            border-radius: 50%;
+        }
+        
+        .status-dot.connected {
+            background: #9ece6a;
+        }
+        
+        .terminal-size {
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Claude Interactive Terminal</h1>
+        <div class="controls">
+            <button class="btn primary" id="startBtn" onclick="startSession()">Start Session</button>
+            <button class="btn" id="stopBtn" onclick="stopSession()" disabled>Stop Session</button>
+            <button class="btn" onclick="clearTerminal()">Clear</button>
+        </div>
+    </div>
+    
+    <div id="terminal-container"></div>
+    
+    <div class="status-bar">
+        <div class="status-indicator">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+        <div class="terminal-size" id="terminalSize">80x24</div>
+    </div>
+    
+    <script>
+        // Initialize xterm.js
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
+            theme: {
+                background: '#1a1b26',
+                foreground: '#c0caf5',
+                cursor: '#c0caf5',
+                cursorAccent: '#1a1b26',
+                selection: '#364a82',
+                black: '#414868',
+                red: '#f7768e',
+                green: '#9ece6a',
+                yellow: '#e0af68',
+                blue: '#7aa2f7',
+                magenta: '#bb9af7',
+                cyan: '#7dcfff',
+                white: '#c0caf5',
+                brightBlack: '#565f89',
+                brightRed: '#f7768e',
+                brightGreen: '#9ece6a',
+                brightYellow: '#e0af68',
+                brightBlue: '#7aa2f7',
+                brightMagenta: '#bb9af7',
+                brightCyan: '#7dcfff',
+                brightWhite: '#c0caf5'
+            },
+            scrollback: 10000,
+            convertEol: true
+        });
+        
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        
+        // Socket.IO connection
+        const socket = io();
+        let sessionActive = false;
+        
+        // Open terminal
+        term.open(document.getElementById('terminal-container'));
+        fitAddon.fit();
+        
+        // Socket events
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            updateStatus(true);
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            updateStatus(false);
+            sessionActive = false;
+            updateButtons();
+        });
+        
+        socket.on('session_started', (data) => {
+            console.log('Session started:', data);
+            sessionActive = true;
+            updateButtons();
+            term.clear();
+            term.focus();
+        });
+        
+        socket.on('session_stopped', (data) => {
+            console.log('Session stopped:', data);
+            sessionActive = false;
+            updateButtons();
+            term.write('\r\n[Session ended]\r\n');
+        });
+        
+        socket.on('output', (data) => {
+            // Write Claude's output to terminal
+            term.write(data.data);
+        });
+        
+        socket.on('error', (data) => {
+            console.error('Error:', data);
+            term.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
+        });
+        
+        // Terminal input
+        term.onData((data) => {
+            if (sessionActive) {
+                socket.emit('input', { input: data });
+            }
+        });
+        
+        // Terminal resize
+        function fitTerminal() {
+            fitAddon.fit();
+            const dims = fitAddon.proposeDimensions();
+            if (dims && sessionActive) {
+                socket.emit('resize', {
+                    rows: dims.rows,
+                    cols: dims.cols
+                });
+                document.getElementById('terminalSize').textContent = `${dims.cols}x${dims.rows}`;
+            }
+        }
+        
+        // Control functions
+        function startSession() {
+            if (!socket.connected) {
+                alert('Not connected to server');
+                return;
+            }
+            
+            socket.emit('start_session', {
+                project_path: '~/projects'
+            });
+        }
+        
+        function stopSession() {
+            if (sessionActive) {
+                socket.emit('stop_session');
+            }
+        }
+        
+        function clearTerminal() {
+            term.clear();
+        }
+        
+        function updateStatus(connected) {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            if (connected) {
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Connected';
+            } else {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Disconnected';
+            }
+        }
+        
+        function updateButtons() {
+            document.getElementById('startBtn').disabled = sessionActive;
+            document.getElementById('stopBtn').disabled = !sessionActive;
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', fitTerminal);
+        
+        // Initial fit
+        setTimeout(fitTerminal, 100);
+    </script>
+</body>
+</html>

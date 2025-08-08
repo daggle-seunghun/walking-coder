@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "name": "Walking Coder",
+    "path": "/Users/shinseunghun/Documents/walking-coder",
+    "description": "Claude Mobile Interface Project",
+    "last_accessed": "2025-08-08T14:25:32.868298",
+    "has_claude_md": true,
+    "exists": true
+  },
+  {
+    "id": 2,
+    "name": "go-lang",
+    "path": "/Users/shinseunghun/projects/go-lang",
+    "description": "",
+    "last_accessed": "2025-08-08T12:45:13.361199",
+    "has_claude_md": false,
+    "exists": true
+  },
+  {
+    "id": 3,
+    "name": "test-pj",
+    "path": "/Users/shinseunghun/projects/test-pj",
+    "description": "",
+    "last_accessed": "2025-08-08T14:17:33.208660",
+    "has_claude_md": false,
+    "exists": true
+  },
+  {
+    "id": 4,
+    "name": "test-pj2",
+    "path": "/Users/shinseunghun/projects/test-pj2",
+    "description": "",
+    "last_accessed": "2025-08-08T14:25:46.231004",
+    "has_claude_md": false,
+    "exists": true
+  }
+]

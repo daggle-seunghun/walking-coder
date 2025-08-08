@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Claude Mobile Local Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .test-result {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .link-button {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Claude Mobile Interface - Local Test Suite</h1>
+    
+    <div class="test-section">
+        <div class="test-title">1. Server Health Check</div>
+        <button onclick="testHealth()">Test Health Endpoint</button>
+        <div id="health-result" class="test-result pending">Click to test...</div>
+    </div>
+    
+    <div class="test-section">
+        <div class="test-title">2. WebSocket Connection</div>
+        <button onclick="testWebSocket()">Test WebSocket</button>
+        <button onclick="disconnectWebSocket()">Disconnect</button>
+        <div id="websocket-result" class="test-result pending">Click to test...</div>
+    </div>
+    
+    <div class="test-section">
+        <div class="test-title">3. Send Test Command</div>
+        <input type="text" id="test-command" placeholder="Enter test message" style="width: 300px; padding: 8px;">
+        <button onclick="sendTestCommand()">Send Command</button>
+        <div id="command-result" class="test-result pending">Enter a command and click send...</div>
+    </div>
+    
+    <div class="test-section">
+        <div class="test-title">4. Mobile UI Test</div>
+        <p>Open the full interface in a new tab to test the mobile UI:</p>
+        <a href="http://localhost:8080" target="_blank" class="link-button">Open Claude Mobile Interface</a>
+    </div>
+    
+    <div class="test-section">
+        <div class="test-title">5. Test Results Summary</div>
+        <div id="summary" class="test-result pending">Run tests to see summary...</div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        let testResults = {
+            health: false,
+            websocket: false,
+            command: false
+        };
+        
+        async function testHealth() {
+            const resultDiv = document.getElementById('health-result');
+            try {
+                const response = await fetch('http://localhost:8080/health');
+                const data = await response.json();
+                resultDiv.className = 'test-result success';
+                resultDiv.innerHTML = `✅ Health check passed!<br>Status: ${data.status}<br>Timestamp: ${data.timestamp}`;
+                testResults.health = true;
+            } catch (error) {
+                resultDiv.className = 'test-result error';
+                resultDiv.innerHTML = `❌ Health check failed: ${error.message}`;
+                testResults.health = false;
+            }
+            updateSummary();
+        }
+        
+        function testWebSocket() {
+            const resultDiv = document.getElementById('websocket-result');
+            try {
+                socket = io('http://localhost:8080');
+                
+                socket.on('connect', () => {
+                    resultDiv.className = 'test-result success';
+                    resultDiv.innerHTML = `✅ WebSocket connected!<br>Socket ID: ${socket.id}`;
+                    testResults.websocket = true;
+                    updateSummary();
+                });
+                
+                socket.on('connected', (data) => {
+                    console.log('Server message:', data);
+                });
+                
+                socket.on('response', (data) => {
+                    document.getElementById('command-result').className = 'test-result success';
+                    document.getElementById('command-result').innerHTML = `✅ Response received:<br>${data.output || 'No output'}`;
+                    testResults.command = true;
+                    updateSummary();
+                });
+                
+                socket.on('disconnect', () => {
+                    resultDiv.className = 'test-result error';
+                    resultDiv.innerHTML = '❌ WebSocket disconnected';
+                    testResults.websocket = false;
+                    updateSummary();
+                });
+                
+                socket.on('error', (error) => {
+                    resultDiv.className = 'test-result error';
+                    resultDiv.innerHTML = `❌ WebSocket error: ${error}`;
+                    testResults.websocket = false;
+                    updateSummary();
+                });
+                
+            } catch (error) {
+                resultDiv.className = 'test-result error';
+                resultDiv.innerHTML = `❌ Failed to create WebSocket: ${error.message}`;
+                testResults.websocket = false;
+                updateSummary();
+            }
+        }
+        
+        function disconnectWebSocket() {
+            if (socket) {
+                socket.disconnect();
+                document.getElementById('websocket-result').className = 'test-result pending';
+                document.getElementById('websocket-result').innerHTML = 'WebSocket disconnected manually';
+            }
+        }
+        
+        function sendTestCommand() {
+            const command = document.getElementById('test-command').value;
+            if (!command) {
+                alert('Please enter a command');
+                return;
+            }
+            
+            if (!socket || !socket.connected) {
+                alert('Please connect WebSocket first');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('command-result');
+            resultDiv.className = 'test-result pending';
+            resultDiv.innerHTML = 'Sending command...';
+            
+            socket.emit('command', { message: command });
+        }
+        
+        function updateSummary() {
+            const summaryDiv = document.getElementById('summary');
+            const passed = Object.values(testResults).filter(r => r).length;
+            const total = Object.keys(testResults).length;
+            
+            if (passed === total) {
+                summaryDiv.className = 'test-result success';
+                summaryDiv.innerHTML = `✅ All tests passed! (${passed}/${total})`;
+            } else if (passed > 0) {
+                summaryDiv.className = 'test-result pending';
+                summaryDiv.innerHTML = `⚠️ Partial success: ${passed}/${total} tests passed`;
+            } else {
+                summaryDiv.className = 'test-result error';
+                summaryDiv.innerHTML = `❌ No tests passed yet (${passed}/${total})`;
+            }
+        }
+        
+        // Auto-run health check on load
+        window.onload = () => {
+            setTimeout(testHealth, 500);
+        };
+    </script>
+</body>
+</html>

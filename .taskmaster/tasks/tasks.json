@@ -1,0 +1,840 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Setup Raspberry Pi 5 and Ubuntu OS",
+        "description": "Initialize Raspberry Pi 5 hardware with Ubuntu Server 24.04 LTS for ARM64, configure basic system settings including hostname, timezone, and network interfaces",
+        "details": "1. Download Ubuntu Server 24.04 LTS for ARM64 from official Ubuntu website\n2. Use Raspberry Pi Imager v1.8+ to flash the image to a 64GB+ A2 class microSD card\n3. Enable SSH on first boot by creating empty 'ssh' file in boot partition\n4. Configure initial network settings via cloud-init or netplan:\n   ```yaml\n   network:\n     version: 2\n     renderer: networkd\n     ethernets:\n       eth0:\n         dhcp4: no\n         addresses: [192.168.1.100/24]\n         gateway4: 192.168.1.1\n         nameservers:\n           addresses: [8.8.8.8, 8.8.4.4]\n   ```\n5. Set hostname: `sudo hostnamectl set-hostname pi-claude-server`\n6. Configure swap (2GB recommended): `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile`\n7. Update system: `sudo apt update && sudo apt upgrade -y`\n8. Install essential packages: `sudo apt install -y curl wget git vim htop net-tools build-essential`",
+        "testStrategy": "Verify successful boot with `systemctl status`, confirm network connectivity with `ping google.com`, check system resources with `htop`, validate SSH access from local network, ensure all system services are running with `systemctl list-units --failed`",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Prepare Ubuntu Server Image and Flash to MicroSD Card",
+            "description": "Download Ubuntu Server 24.04 LTS ARM64 image and use Raspberry Pi Imager to create bootable MicroSD card with initial SSH configuration",
+            "dependencies": [],
+            "details": "1. Download Ubuntu Server 24.04 LTS for ARM64 from https://ubuntu.com/download/raspberry-pi\n2. Download and install Raspberry Pi Imager v1.8+ from https://www.raspberrypi.com/software/\n3. Insert 64GB+ A2 class microSD card into computer\n4. Open Raspberry Pi Imager and select 'Ubuntu Server 24.04 LTS (64-bit)' as OS\n5. Select the microSD card as storage device\n6. Click gear icon for advanced options:\n   - Enable SSH with password authentication\n   - Set username: ubuntu\n   - Set password: (secure temporary password)\n   - Configure wireless LAN if needed\n7. Write image to SD card and verify\n8. After flashing, mount boot partition and create empty 'ssh' file: `touch /Volumes/system-boot/ssh`\n9. Safely eject microSD card",
+            "status": "done",
+            "testStrategy": "Verify microSD card contains boot and root partitions, confirm 'ssh' file exists in boot partition, check that cmdline.txt and config.txt are present and properly formatted"
+          },
+          {
+            "id": 2,
+            "title": "Initial Boot and Network Configuration",
+            "description": "Boot Raspberry Pi 5 with prepared Ubuntu image and configure static IP address using netplan for reliable network connectivity",
+            "dependencies": [
+              "1.1"
+            ],
+            "details": "1. Insert microSD card into Raspberry Pi 5\n2. Connect ethernet cable to router\n3. Connect power supply (27W USB-C recommended)\n4. Wait 2-3 minutes for initial boot\n5. Find Pi's DHCP IP using router admin panel or: `nmap -sn 192.168.1.0/24`\n6. SSH to Pi: `ssh ubuntu@<dhcp-ip>` (accept host key)\n7. Create netplan config: `sudo nano /etc/netplan/01-netcfg.yaml`\n   ```yaml\n   network:\n     version: 2\n     renderer: networkd\n     ethernets:\n       eth0:\n         dhcp4: no\n         addresses: [192.168.1.100/24]\n         routes:\n           - to: default\n             via: 192.168.1.1\n         nameservers:\n           addresses: [8.8.8.8, 8.8.4.4]\n   ```\n8. Apply configuration: `sudo netplan apply`\n9. Verify new IP: `ip addr show eth0`\n<info added on 2025-08-05T17:50:13.596Z>\nTask completed successfully. Modified configuration: Router port forwarding configured to map public IP 27.35.44.61 to internal Pi static IP, enabling direct internet SSH access without requiring same network connection. Pi remains accessible via both local IP 192.168.1.100 for same-network connections and public IP 27.35.44.61:2222 for remote access.\n</info added on 2025-08-05T17:50:13.596Z>",
+            "status": "done",
+            "testStrategy": "Ping gateway (192.168.1.1) and external DNS (8.8.8.8), verify static IP is assigned with `ip addr`, test DNS resolution with `nslookup google.com`, ensure network survives reboot"
+          },
+          {
+            "id": 3,
+            "title": "Configure Hostname and System Locale",
+            "description": "Set system hostname, configure timezone, locale settings, and update system clock for proper system identification and time management",
+            "dependencies": [
+              "1.2"
+            ],
+            "details": "1. Set hostname: `sudo hostnamectl set-hostname pi-claude-server`\n2. Update /etc/hosts file:\n   ```\n   sudo nano /etc/hosts\n   # Add line: 192.168.1.100 pi-claude-server\n   ```\n3. Configure timezone: `sudo timedatectl set-timezone America/New_York` (adjust as needed)\n4. Verify time settings: `timedatectl status`\n5. Configure locale:\n   ```bash\n   sudo locale-gen en_US.UTF-8\n   sudo update-locale LANG=en_US.UTF-8\n   ```\n6. Enable NTP time sync:\n   ```bash\n   sudo timedatectl set-ntp true\n   sudo systemctl restart systemd-timesyncd\n   ```\n7. Verify hostname: `hostnamectl`\n8. Reboot to apply all changes: `sudo reboot`\n<info added on 2025-08-05T17:51:46.696Z>\nSSH access is now configured with .pem file authentication and a 'raspberry-pi' alias in the local .ssh/config file for easy connection. This provides secure key-based authentication instead of password authentication. Connection can now be established using: `ssh raspberry-pi` from the local machine.\n</info added on 2025-08-05T17:51:46.696Z>",
+            "status": "done",
+            "testStrategy": "Check hostname with `hostname -f`, verify timezone with `date`, confirm NTP sync with `timedatectl show --property=NTPSynchronized`, test that hostname resolves locally"
+          },
+          {
+            "id": 4,
+            "title": "Configure Swap Space and Memory Management",
+            "description": "Create and configure 2GB swap file to improve system stability and prevent out-of-memory issues during resource-intensive operations",
+            "dependencies": [
+              "1.3"
+            ],
+            "details": "1. Create swap file:\n   ```bash\n   sudo fallocate -l 2G /swapfile\n   sudo chmod 600 /swapfile\n   sudo mkswap /swapfile\n   sudo swapon /swapfile\n   ```\n2. Make swap permanent by adding to /etc/fstab:\n   ```bash\n   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab\n   ```\n3. Configure swappiness for server use:\n   ```bash\n   echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf\n   echo 'vm.vfs_cache_pressure=50' | sudo tee -a /etc/sysctl.conf\n   sudo sysctl -p\n   ```\n4. Set up zram for compressed memory (optional but recommended):\n   ```bash\n   sudo apt install -y zram-config\n   sudo systemctl enable zram-config\n   ```\n5. Verify swap configuration: `free -h`\n6. Check current swappiness: `cat /proc/sys/vm/swappiness`\n<info added on 2025-08-05T17:57:19.895Z>\nCurrent swap status shows existing swap file active. Need to verify configuration meets requirements:\n\n1. Check current swap setup:\n   ```bash\n   free -h\n   swapon --show\n   ```\n\n2. If existing swap is less than 2GB, need to resize or recreate:\n   ```bash\n   sudo swapoff /swapfile  # if exists\n   sudo rm /swapfile       # if exists\n   # Then proceed with 2GB creation as outlined above\n   ```\n\n3. If swap is already 2GB and properly configured, skip creation steps and proceed directly to swappiness configuration:\n   ```bash\n   echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf\n   echo 'vm.vfs_cache_pressure=50' | sudo tee -a /etc/sysctl.conf\n   sudo sysctl -p\n   ```\n\n4. Verify final configuration matches requirements before marking complete.\n</info added on 2025-08-05T17:57:19.895Z>\n<info added on 2025-08-05T18:01:07.435Z>\nTask implementation completed with existing configuration. Current system has 1GB swap file active with optimized swappiness value of 10, which provides adequate memory management for the 8GB RAM system. While the original specification called for 2GB swap, the 1GB configuration is functionally sufficient for most server workloads. The swap file is properly configured in /etc/fstab for persistence, and memory pressure settings are optimized for server use. User may optionally expand swap to 2GB in the future if monitoring indicates higher memory pressure during intensive operations.\n</info added on 2025-08-05T18:01:07.435Z>",
+            "status": "done",
+            "testStrategy": "Verify swap is active with `swapon --show`, check total memory with `free -h`, test swap usage with stress test: `stress --vm 1 --vm-bytes 1G --timeout 10s`, monitor with `htop`"
+          },
+          {
+            "id": 5,
+            "title": "System Update and Essential Package Installation",
+            "description": "Update Ubuntu system to latest packages and install essential development tools and utilities required for server operation",
+            "dependencies": [
+              "1.4"
+            ],
+            "details": "1. Update package lists: `sudo apt update`\n2. Upgrade all packages: `sudo apt upgrade -y`\n3. Perform distribution upgrade: `sudo apt dist-upgrade -y`\n4. Install essential packages:\n   ```bash\n   sudo apt install -y \\\n     curl wget git vim htop net-tools \\\n     build-essential python3-pip \\\n     software-properties-common \\\n     apt-transport-https ca-certificates \\\n     gnupg lsb-release ufw \\\n     unattended-upgrades\n   ```\n5. Configure automatic security updates:\n   ```bash\n   sudo dpkg-reconfigure --priority=low unattended-upgrades\n   # Select 'Yes' to enable automatic updates\n   ```\n6. Clean up unnecessary packages: `sudo apt autoremove -y`\n7. Install useful monitoring tools:\n   ```bash\n   sudo apt install -y iotop iftop ncdu tree jq\n   ```\n8. Verify installations: `which git curl wget vim`",
+            "status": "done",
+            "testStrategy": "Check system is fully updated with `sudo apt list --upgradable`, verify all tools are installed with `which` command, test automatic updates configuration with `sudo unattended-upgrade --dry-run --debug`, check system health with `systemctl status`"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Configure SSH Server with Security Hardening",
+        "description": "Install and configure OpenSSH server with enhanced security settings including key-based authentication, custom port, and fail2ban integration",
+        "details": "1. Install OpenSSH server: `sudo apt install -y openssh-server fail2ban`\n2. Generate strong SSH keys on client: `ssh-keygen -t ed25519 -b 521 -C \"mobile-claude@pi\"`\n3. Copy public key to Pi: `ssh-copy-id -i ~/.ssh/id_ed25519.pub ubuntu@192.168.1.100`\n4. Configure /etc/ssh/sshd_config:\n   ```\n   Port 2222\n   PermitRootLogin no\n   PasswordAuthentication no\n   PubkeyAuthentication yes\n   MaxAuthTries 3\n   ClientAliveInterval 120\n   ClientAliveCountMax 3\n   AllowUsers ubuntu\n   Protocol 2\n   ```\n5. Configure fail2ban for SSH in /etc/fail2ban/jail.local:\n   ```\n   [sshd]\n   enabled = true\n   port = 2222\n   maxretry = 3\n   bantime = 3600\n   ```\n6. Enable services: `sudo systemctl enable ssh fail2ban`\n7. Configure UFW firewall: `sudo ufw allow 2222/tcp && sudo ufw enable`",
+        "testStrategy": "Test SSH connection on custom port from local network, verify key-based auth works and password auth fails, check fail2ban status with `sudo fail2ban-client status sshd`, simulate brute force attack to confirm banning works, verify firewall rules with `sudo ufw status`",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Install OpenSSH Server and Fail2ban",
+            "description": "Install and configure the core SSH server package and intrusion prevention system on Ubuntu",
+            "dependencies": [],
+            "details": "Execute package installation commands: `sudo apt update && sudo apt install -y openssh-server fail2ban`. Verify installation with `systemctl status ssh` and `systemctl status fail2ban`. Ensure both services are active and enabled for automatic startup. Check OpenSSH version with `ssh -V` to confirm latest security patches.",
+            "status": "done",
+            "testStrategy": "Verify service status with `sudo systemctl is-active ssh fail2ban`, check listening ports with `sudo ss -tlnp | grep ssh`, confirm fail2ban is monitoring SSH with `sudo fail2ban-client status`"
+          },
+          {
+            "id": 2,
+            "title": "Generate and Deploy SSH Key Pair",
+            "description": "Create secure Ed25519 SSH keys on client device and deploy public key to Raspberry Pi for passwordless authentication",
+            "dependencies": [
+              "2.1"
+            ],
+            "details": "On client machine, generate Ed25519 key pair: `ssh-keygen -t ed25519 -b 521 -C \"mobile-claude@pi\" -f ~/.ssh/id_ed25519_pi`. Create .ssh directory on Pi if needed: `ssh ubuntu@192.168.1.100 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'`. Deploy public key: `ssh-copy-id -i ~/.ssh/id_ed25519_pi.pub ubuntu@192.168.1.100`. Set correct permissions: `ssh ubuntu@192.168.1.100 'chmod 600 ~/.ssh/authorized_keys'`",
+            "status": "done",
+            "testStrategy": "Test key-based authentication with `ssh -i ~/.ssh/id_ed25519_pi ubuntu@192.168.1.100 'echo SSH key auth successful'`, verify no password prompt appears, check authorized_keys file contains the public key"
+          },
+          {
+            "id": 3,
+            "title": "Harden SSH Configuration",
+            "description": "Configure SSH daemon with security best practices including custom port, disabled root login, and restricted authentication methods",
+            "dependencies": [
+              "2.2"
+            ],
+            "details": "Backup original config: `sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup`. Edit /etc/ssh/sshd_config with security settings: Port 2222, PermitRootLogin no, PasswordAuthentication no, PubkeyAuthentication yes, MaxAuthTries 3, ClientAliveInterval 120, ClientAliveCountMax 3, AllowUsers ubuntu, Protocol 2, X11Forwarding no, PermitEmptyPasswords no. Validate configuration: `sudo sshd -t`. Restart SSH service: `sudo systemctl restart ssh`\n<info added on 2025-08-05T18:24:41.637Z>\nUser decided to keep using port 22 instead of changing to 2222. Since key-based authentication is already configured, this provides sufficient security. Updated configuration to apply only other security settings without port change: PermitRootLogin no, PasswordAuthentication no, PubkeyAuthentication yes, MaxAuthTries 3, ClientAliveInterval 120, ClientAliveCountMax 3, AllowUsers ubuntu, Protocol 2, X11Forwarding no, PermitEmptyPasswords no. Port remains default 22.\n</info added on 2025-08-05T18:24:41.637Z>",
+            "status": "done",
+            "testStrategy": "Validate config syntax with `sudo sshd -t`, attempt password login to confirm rejection, verify custom port with `sudo ss -tlnp | grep 2222`, test connection limits by exceeding MaxAuthTries"
+          },
+          {
+            "id": 4,
+            "title": "Configure Fail2ban for SSH Protection",
+            "description": "Setup fail2ban jail rules to automatically ban IPs after failed SSH login attempts on custom port [Updated: 2025. 8. 6.]",
+            "dependencies": [
+              "2.3"
+            ],
+            "details": "Create jail.local configuration: `sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local`. Configure SSH jail in /etc/fail2ban/jail.local: [sshd] enabled=true, port=2222, filter=sshd, logpath=/var/log/auth.log, maxretry=3, findtime=600, bantime=3600, ignoreip=127.0.0.1/8 192.168.1.0/24. Create custom filter if needed in /etc/fail2ban/filter.d/sshd.local. Restart fail2ban: `sudo systemctl restart fail2ban`\n<info added on 2025-08-05T18:26:07.457Z>\nBased on the user request, since the SSH configuration was changed to use port 22 instead of 2222, and the default sshd jail is already enabled, the fail2ban configuration needs to be updated accordingly. Here's the new information to append:\n\nUpdated configuration for port 22: SSH server configured to use standard port 22 instead of custom port 2222. Modified /etc/fail2ban/jail.local SSH jail configuration: [sshd] enabled=true, port=22, filter=sshd, logpath=/var/log/auth.log, maxretry=3, findtime=600, bantime=3600, ignoreip=127.0.0.1/8 192.168.1.0/24. Default sshd jail already active, configuration optimized for standard SSH port. Verified fail2ban service restart and jail status with `sudo fail2ban-client status sshd`\n</info added on 2025-08-05T18:26:07.457Z>",
+            "status": "done",
+            "testStrategy": "Check jail status with `sudo fail2ban-client status sshd`, simulate failed logins from test IP, verify ban with `sudo fail2ban-client status sshd | grep 'Banned IP'`, test unban with `sudo fail2ban-client unban <IP>`"
+          },
+          {
+            "id": 5,
+            "title": "Configure UFW Firewall Rules",
+            "description": "Setup Ubuntu Firewall (UFW) to allow only SSH on custom port and enable stateful packet filtering [Updated: 2025. 8. 6.]",
+            "dependencies": [
+              "2.3",
+              "2.4"
+            ],
+            "details": "Reset UFW to defaults: `sudo ufw --force reset`. Set default policies: `sudo ufw default deny incoming && sudo ufw default allow outgoing`. Allow SSH on custom port: `sudo ufw allow 2222/tcp comment 'SSH on custom port'`. Enable logging: `sudo ufw logging on`. Enable firewall: `sudo ufw --force enable`. Add rate limiting for SSH: `sudo ufw limit 2222/tcp`. Configure IPv6 if needed in /etc/default/ufw\n<info added on 2025-08-05T18:29:07.364Z>\n포트 22로 변경된 SSH 설정에 맞춰 UFW 규칙 수정: Reset UFW to defaults: `sudo ufw --force reset`. Set default policies: `sudo ufw default deny incoming && sudo ufw default allow outgoing`. Allow SSH on standard port: `sudo ufw allow 22/tcp comment 'SSH on standard port'`. Enable logging: `sudo ufw logging on`. Enable firewall: `sudo ufw --force enable`. Add rate limiting for SSH: `sudo ufw limit 22/tcp`. Configure IPv6 if needed in /etc/default/ufw. 포트 2222 대신 표준 포트 22를 사용하므로 방화벽 규칙도 22/tcp로 업데이트.\n</info added on 2025-08-05T18:29:07.364Z>",
+            "status": "done",
+            "testStrategy": "Verify firewall status with `sudo ufw status verbose`, test SSH connection on port 2222, attempt connection on port 22 to confirm block, check logs in /var/log/ufw.log, verify rules persist after reboot"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Setup DDNS Service Integration",
+        "description": "Configure dynamic DNS service using DuckDNS with automatic IP update scripts to enable consistent external access",
+        "details": "1. Register free DuckDNS account and create subdomain (e.g., pi-claude.duckdns.org)\n2. Install dependencies: `sudo apt install -y curl cron`\n3. Create update script /home/ubuntu/duckdns/duck.sh:\n   ```bash\n   #!/bin/bash\n   DOMAIN=\"pi-claude\"\n   TOKEN=\"your-duckdns-token\"\n   curl -s \"https://www.duckdns.org/update?domains=${DOMAIN}&token=${TOKEN}&ip=\" | \n   logger -t duckdns\n   ```\n4. Make executable: `chmod +x /home/ubuntu/duckdns/duck.sh`\n5. Add to crontab for 5-minute updates: `*/5 * * * * /home/ubuntu/duckdns/duck.sh >/dev/null 2>&1`\n6. Create systemd service for reliability in /etc/systemd/system/duckdns.service:\n   ```\n   [Unit]\n   Description=DuckDNS Update Service\n   After=network-online.target\n   \n   [Service]\n   Type=oneshot\n   ExecStart=/home/ubuntu/duckdns/duck.sh\n   User=ubuntu\n   \n   [Install]\n   WantedBy=multi-user.target\n   ```\n7. Enable timer: `sudo systemctl enable --now duckdns.timer`",
+        "testStrategy": "Verify initial update with `./duck.sh` and check response is 'OK', test DNS resolution with `nslookup pi-claude.duckdns.org`, monitor cron execution in syslog, simulate IP change and verify update within 5 minutes, check systemd timer status",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create DuckDNS Account and Configure Subdomain",
+            "description": "Register for a free DuckDNS account and set up a custom subdomain for the Raspberry Pi's dynamic DNS service [Updated: 2025. 8. 6.]",
+            "dependencies": [],
+            "details": "Navigate to https://www.duckdns.org and sign in with a supported provider (Google, GitHub, Twitter, Reddit, or Persona). Once logged in, create a new subdomain (e.g., pi-claude.duckdns.org) and save the generated authentication token. Document the subdomain name and token securely for use in the update script. Verify the subdomain is reserved and initially points to the current public IP address.\n<info added on 2025-08-05T18:34:11.212Z>\nUPDATE: Since the user already owns the domain 'ssh00n.site', the DDNS setup needs to be modified to use their custom domain instead of DuckDNS. This requires:\n\n1. Skip DuckDNS registration completely\n2. Access the DNS management panel for ssh00n.site domain (usually through the domain registrar or DNS provider like Cloudflare, Route 53, etc.)\n3. Create an A record pointing to the current public IP address\n4. Obtain API credentials from the DNS provider for programmatic updates\n5. Modify the update script to use the DNS provider's API instead of DuckDNS API\n6. Configure the script with the custom domain and appropriate API authentication\n\nThe subdomain could be something like 'pi.ssh00n.site' or 'home.ssh00n.site' depending on user preference. This approach provides more control and eliminates dependency on DuckDNS service.\n</info added on 2025-08-05T18:34:11.212Z>\n<info added on 2025-08-05T18:37:35.365Z>\nSince the user owns the domain 'ssh00n.site' through Gabia (Korean domain registrar), we need to address the API limitations. Gabia has restricted API access, so we have two main options:\n\n1. **Cloudflare DNS Migration**: Change nameservers from Gabia to Cloudflare (ns.cloudflare.com) to use Cloudflare's robust API for automated DNS updates. This requires updating nameserver settings in Gabia's control panel and configuring the domain in Cloudflare dashboard.\n\n2. **Direct Gabia DNS Management**: Use Gabia's limited web interface for manual DNS record updates or explore their DNS management API if available for business accounts.\n\nRecommended approach is Cloudflare migration for better automation support. The subdomain could be 'pi.ssh00n.site' or 'home.ssh00n.site'. Update script will need to use Cloudflare API with zone ID and API token instead of DuckDNS endpoint.\n</info added on 2025-08-05T18:37:35.365Z>",
+            "status": "done",
+            "testStrategy": "Confirm subdomain registration by accessing the DuckDNS dashboard and verifying the subdomain appears in the account. Test initial DNS resolution using nslookup or dig commands to ensure the subdomain resolves to an IP address. Save credentials in a secure location for script configuration."
+          },
+          {
+            "id": 2,
+            "title": "Install Dependencies and Create Directory Structure",
+            "description": "Install required system packages and create the necessary directory structure for the DuckDNS update script [Updated: 2025. 8. 6.]",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "Execute 'sudo apt update && sudo apt install -y curl cron' to install curl for making HTTP requests and cron for scheduling. Create the DuckDNS directory with 'mkdir -p /home/ubuntu/duckdns'. Verify curl installation with 'curl --version' and ensure cron service is active with 'systemctl status cron'. Set appropriate permissions on the directory with 'chmod 755 /home/ubuntu/duckdns'.\n<info added on 2025-08-05T18:52:31.323Z>\nUser has completed the Cloudflare API DDNS update script and installed necessary packages and created script files. The implementation approach has been modified from DuckDNS to Cloudflare API for enhanced DNS management capabilities.\n</info added on 2025-08-05T18:52:31.323Z>",
+            "status": "done",
+            "testStrategy": "Verify curl is installed and functional by running 'curl -I https://www.duckdns.org'. Check cron service status and ensure it's enabled for autostart. Confirm directory exists with correct permissions using 'ls -la /home/ubuntu/'."
+          },
+          {
+            "id": 3,
+            "title": "Create and Configure DuckDNS Update Script",
+            "description": "Write the shell script that will update the DuckDNS service with the current public IP address",
+            "dependencies": [
+              "3.2"
+            ],
+            "details": "Create the script file at /home/ubuntu/duckdns/duck.sh with the provided bash code, replacing 'pi-claude' with the actual subdomain and 'your-duckdns-token' with the authentication token from step 1. Make the script executable with 'chmod +x /home/ubuntu/duckdns/duck.sh'. Add error handling to the script to log failures. Consider adding a check to only update if the IP has changed to reduce unnecessary API calls.",
+            "status": "done",
+            "testStrategy": "Execute the script manually with './duck.sh' and verify it returns 'OK' response. Check system logs with 'journalctl -t duckdns' to confirm the update was logged. Test with an incorrect token to ensure error handling works properly. Monitor the DuckDNS dashboard to confirm the IP update is reflected."
+          },
+          {
+            "id": 4,
+            "title": "Configure Cron Job for Automatic Updates",
+            "description": "Set up a cron job to automatically run the DuckDNS update script every 5 minutes",
+            "dependencies": [
+              "3.3"
+            ],
+            "details": "Edit the crontab for the ubuntu user with 'crontab -e' and add the line '*/5 * * * * /home/ubuntu/duckdns/duck.sh >/dev/null 2>&1'. This will run the script every 5 minutes and redirect output to prevent cron from sending emails. Verify the cron entry with 'crontab -l'. Consider adding a lock file mechanism to prevent overlapping executions if the script takes longer than expected.",
+            "status": "done",
+            "testStrategy": "Wait for 5-10 minutes and check system logs to confirm the cron job is executing: 'grep duckdns /var/log/syslog'. Monitor for at least 2-3 execution cycles. Temporarily modify the cron schedule to run every minute for faster testing, then restore to 5 minutes. Check that no error emails are being generated."
+          },
+          {
+            "id": 5,
+            "title": "Create Systemd Service and Timer for Enhanced Reliability",
+            "description": "Implement a systemd service and timer as an additional layer of reliability for the DuckDNS updates",
+            "dependencies": [
+              "3.3"
+            ],
+            "details": "Create the service file at /etc/systemd/system/duckdns.service with the provided configuration. Create a corresponding timer file at /etc/systemd/system/duckdns.timer with OnCalendar=*:0/5 to run every 5 minutes. Enable and start the timer with 'sudo systemctl enable --now duckdns.timer'. This provides better logging, dependency management, and system integration compared to cron alone. Configure the service to restart on failure with Restart=on-failure and RestartSec=30.",
+            "status": "done",
+            "testStrategy": "Check timer status with 'sudo systemctl status duckdns.timer' and verify it's active. Run the service manually with 'sudo systemctl start duckdns.service' and check logs with 'journalctl -u duckdns'. Simulate a failure by temporarily breaking the script and verify the service handles it gracefully. Monitor both cron and systemd executions to ensure they don't conflict."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Configure Router Port Forwarding",
+        "description": "Setup port forwarding rules on home router to enable external SSH and web terminal access with security considerations",
+        "details": "1. Access router admin panel (typically 192.168.1.1)\n2. Navigate to Port Forwarding/Virtual Server section\n3. Create SSH forwarding rule:\n   - External Port: 2222\n   - Internal IP: 192.168.1.100 (Pi's static IP)\n   - Internal Port: 2222\n   - Protocol: TCP\n4. Create HTTPS forwarding rule for web terminal:\n   - External Port: 8443\n   - Internal IP: 192.168.1.100\n   - Internal Port: 443\n   - Protocol: TCP\n5. Enable UPnP if needed for automatic port management\n6. Configure router firewall to log connection attempts\n7. Document router model and settings for disaster recovery\n8. Test external access: `ssh -p 2222 ubuntu@pi-claude.duckdns.org`\n9. Consider using non-standard external ports (e.g., 52222) for additional security",
+        "testStrategy": "Test SSH connection from mobile network (4G/5G), verify connection logs in router and Pi, use online port checker to confirm ports are open, test from multiple external networks, verify fail2ban still works with external connections",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Access Router Admin Panel and Document Configuration",
+            "description": "Access the router's administrative interface and document current network settings for disaster recovery",
+            "dependencies": [],
+            "details": "1. Connect to router admin panel via web browser at 192.168.1.1 (or router's default gateway IP)\n2. Login with admin credentials (check router label if unknown)\n3. Document router make/model, firmware version, and current settings\n4. Take screenshots of current NAT/Port Forwarding configuration\n5. Export configuration backup if router supports it\n6. Verify Pi's static IP (192.168.1.100) in DHCP reservation list\n7. Check if UPnP is currently enabled and document security implications",
+            "status": "done",
+            "testStrategy": "Verify successful login to router interface, confirm backup file is created and stored securely, validate Pi's IP reservation is active"
+          },
+          {
+            "id": 2,
+            "title": "Configure SSH Port Forwarding Rule",
+            "description": "Create port forwarding rule for secure SSH access using non-standard external port for enhanced security",
+            "dependencies": [
+              "4.1"
+            ],
+            "details": "1. Navigate to Port Forwarding/Virtual Server/NAT section\n2. Create new SSH forwarding rule with security-focused configuration:\n   - Service Name: 'Pi-SSH-Secure'\n   - External Port: 52222 (non-standard for security)\n   - Internal IP: 192.168.1.100\n   - Internal Port: 2222\n   - Protocol: TCP only\n   - Enable rule and save\n3. If router supports it, restrict source IPs to known ranges\n4. Enable connection logging for this rule\n5. Document the external port choice and rationale",
+            "status": "done",
+            "testStrategy": "Use online port scanner to verify port 52222 is open, attempt SSH connection from external network: ssh -p 52222 ubuntu@[external-ip], verify connection appears in router logs"
+          },
+          {
+            "id": 3,
+            "title": "Configure HTTPS Port Forwarding for Web Terminal",
+            "description": "Setup secure port forwarding for ttyd web terminal access with HTTPS on non-standard port",
+            "dependencies": [
+              "4.1"
+            ],
+            "details": "1. Create HTTPS forwarding rule in router:\n   - Service Name: 'Pi-WebTerminal-HTTPS'\n   - External Port: 8443 (common alternative HTTPS port)\n   - Internal IP: 192.168.1.100\n   - Internal Port: 443\n   - Protocol: TCP only\n2. Consider using even more obscure port (e.g., 58443) for additional security\n3. Enable rule-specific logging if available\n4. If router supports scheduling, consider time-based access restrictions\n5. Document chosen ports and security rationale",
+            "status": "done",
+            "testStrategy": "Test HTTPS access from mobile browser at https://[external-ip]:8443, verify SSL certificate warnings appear as expected, check router logs show connection attempts"
+          },
+          {
+            "id": 4,
+            "title": "Configure Router Security and Firewall Settings",
+            "description": "Implement additional router-level security measures including firewall rules, logging, and intrusion detection",
+            "dependencies": [
+              "4.2",
+              "4.3"
+            ],
+            "details": "1. Enable router firewall with strict inbound rules\n2. Configure detailed logging for all port forwarding rules:\n   - Enable connection attempt logging\n   - Set log retention period\n   - Configure syslog forwarding to Pi if supported\n3. Disable unnecessary services:\n   - WPS (security vulnerability)\n   - Telnet access\n   - SNMP if not needed\n4. Enable DDoS protection if available\n5. Configure rate limiting for forwarded ports\n6. Set up email/SMS alerts for suspicious activity if supported\n7. Update router firmware to latest version",
+            "status": "done",
+            "testStrategy": "Perform port scan from external source, verify only configured ports are open, simulate multiple failed connection attempts and verify they appear in logs, confirm alerts are triggered"
+          },
+          {
+            "id": 5,
+            "title": "Test External Access and Create Recovery Documentation",
+            "description": "Comprehensively test all external access methods and create detailed recovery documentation",
+            "dependencies": [
+              "4.2",
+              "4.3",
+              "4.4"
+            ],
+            "details": "1. Test SSH access from multiple external networks:\n   - 4G/5G mobile connection\n   - Public WiFi\n   - VPN connection\n   Command: `ssh -p 52222 ubuntu@pi-claude.duckdns.org`\n2. Test web terminal HTTPS access from mobile devices\n3. Verify fail2ban works with external connections\n4. Create comprehensive documentation including:\n   - Router model and firmware version\n   - All port forwarding rules\n   - Security configurations\n   - Recovery procedures\n   - Emergency rollback steps\n5. Set up monitoring for open ports using external service\n6. Schedule regular security audits",
+            "status": "done",
+            "testStrategy": "Successfully connect via SSH and HTTPS from at least 3 different external networks, verify all connections are logged, confirm documentation is complete and accessible offline"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Install and Configure Claude Code CLI",
+        "description": "Install Claude Code CLI with proper authentication and project workspace configuration for mobile development",
+        "details": "1. Install Node.js 20 LTS via NodeSource:\n   ```bash\n   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -\n   sudo apt install -y nodejs\n   ```\n2. Install Claude Code CLI globally: `sudo npm install -g @anthropic-ai/claude-cli@latest`\n3. Create project directories structure:\n   ```bash\n   mkdir -p ~/projects/{active,archive,templates}\n   mkdir -p ~/.claude-cli/{logs,cache}\n   ```\n4. Authenticate CLI (run interactively first time): `claude auth login`\n5. Configure CLI settings in ~/.claude-cli/config.json:\n   ```json\n   {\n     \"defaultProject\": \"~/projects/active\",\n     \"autoSave\": true,\n     \"theme\": \"dark\",\n     \"maxTokens\": 4096,\n     \"temperature\": 0.7\n   }\n   ```\n6. Create project initialization script ~/bin/claude-init.sh:\n   ```bash\n   #!/bin/bash\n   PROJECT_NAME=$1\n   mkdir -p ~/projects/active/$PROJECT_NAME\n   cd ~/projects/active/$PROJECT_NAME\n   git init\n   echo \"# $PROJECT_NAME\" > README.md\n   claude chat --project .\n   ```\n7. Add to PATH in ~/.bashrc: `export PATH=$PATH:~/bin`",
+        "testStrategy": "Verify CLI installation with `claude --version`, test authentication with `claude auth status`, create test project and run sample commands, verify project switching works, test file operations and code generation, monitor API usage",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Install Node.js 20 LTS on Raspberry Pi",
+            "description": "Download and install Node.js 20 LTS using NodeSource repository for ARM64 architecture",
+            "dependencies": [],
+            "details": "Execute the NodeSource setup script to add the Node.js 20.x repository, then install Node.js and npm. Verify the installation by checking versions of both node and npm to ensure compatibility with Claude Code CLI requirements.",
+            "status": "done",
+            "testStrategy": "Run `node --version` and `npm --version` to verify Node.js 20.x and npm are installed correctly. Test npm functionality by installing a simple package globally."
+          },
+          {
+            "id": 2,
+            "title": "Install and Verify Claude Code CLI",
+            "description": "Install Claude Code CLI globally via npm and verify successful installation",
+            "dependencies": [
+              "5.1"
+            ],
+            "details": "Use npm to install @anthropic-ai/claude-cli globally with sudo permissions. After installation, verify the CLI is accessible from any directory and check the installed version matches the latest stable release.",
+            "status": "done",
+            "testStrategy": "Execute `claude --version` to verify installation. Run `claude --help` to ensure all commands are available. Test basic functionality with `claude chat --help`."
+          },
+          {
+            "id": 3,
+            "title": "Create Project Directory Structure and CLI Directories",
+            "description": "Set up organized directory structure for Claude projects and CLI configuration",
+            "dependencies": [],
+            "details": "Create a hierarchical directory structure under ~/projects for active development, archived projects, and reusable templates. Additionally, create hidden directories for Claude CLI logs and cache storage to ensure proper operation and debugging capabilities.",
+            "status": "done",
+            "testStrategy": "Use `ls -la ~/projects` and `tree ~/projects` to verify directory structure. Check permissions with `ls -ld ~/.claude-cli/*` to ensure read/write access."
+          },
+          {
+            "id": 4,
+            "title": "Authenticate Claude CLI and Configure Settings",
+            "description": "Complete Claude CLI authentication and customize configuration for mobile development workflow",
+            "dependencies": [
+              "5.2"
+            ],
+            "details": "Run the interactive authentication process to link the CLI with your Anthropic account. After authentication, create and configure the config.json file with optimal settings for mobile development including dark theme, appropriate token limits, and auto-save functionality.",
+            "status": "done",
+            "testStrategy": "Run `claude auth status` to verify authentication. Test configuration by creating a test conversation with `claude chat` and verify settings are applied. Check ~/.claude-cli/config.json contents."
+          },
+          {
+            "id": 5,
+            "title": "Create Project Initialization Script and Update PATH",
+            "description": "Set up automated project initialization script and ensure it's accessible system-wide",
+            "dependencies": [
+              "5.3",
+              "5.4"
+            ],
+            "details": "Create a bash script that automates new Claude project setup including git initialization and README creation. Make the script executable and add the ~/bin directory to PATH in .bashrc for system-wide accessibility. Source .bashrc to apply changes immediately.",
+            "status": "done",
+            "testStrategy": "Run `claude-init.sh test-project` to create a test project. Verify git repository is initialized and Claude chat starts correctly. Test PATH update with `which claude-init.sh`."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Setup ttyd Web Terminal Server",
+        "description": "Install and configure ttyd for mobile-friendly web terminal access with SSL and authentication",
+        "details": "1. Download latest ttyd binary for ARM64:\n   ```bash\n   wget https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.aarch64 -O ttyd\n   sudo mv ttyd /usr/local/bin/\n   sudo chmod +x /usr/local/bin/ttyd\n   ```\n2. Create ttyd systemd service in /etc/systemd/system/ttyd.service:\n   ```\n   [Unit]\n   Description=ttyd Web Terminal\n   After=network.target\n   \n   [Service]\n   Type=simple\n   ExecStart=/usr/local/bin/ttyd -p 7681 -c ubuntu:password -t fontSize=16 -t \"theme={'background':'#1e1e1e'}\" /bin/bash\n   Restart=always\n   User=ubuntu\n   \n   [Install]\n   WantedBy=multi-user.target\n   ```\n3. Configure for mobile optimization with custom CSS:\n   ```css\n   /* Save to /var/www/ttyd-custom.css */\n   body { font-size: 16px !important; }\n   .terminal { touch-action: none; }\n   #terminal-container { height: 100vh; }\n   ```\n4. Enable basic auth and SSL in production config\n5. Start service: `sudo systemctl enable --now ttyd`\n6. Configure auto-start Claude CLI on connection",
+        "testStrategy": "Access web terminal via http://192.168.1.100:7681, test on iPhone Safari and Chrome, verify terminal responsiveness and touch input, test copy/paste functionality, check session persistence, measure latency over 4G",
+        "priority": "high",
+        "dependencies": [
+          5
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Download and Install ttyd Binary",
+            "description": "Download the latest ttyd binary for ARM64 architecture and install it in the system path with proper permissions",
+            "dependencies": [],
+            "details": "1. Create temporary download directory: `mkdir -p ~/tmp/ttyd-install`\n2. Download latest ttyd binary for ARM64: `wget https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.aarch64 -O ~/tmp/ttyd-install/ttyd`\n3. Verify binary integrity with sha256sum if available\n4. Move binary to system location: `sudo mv ~/tmp/ttyd-install/ttyd /usr/local/bin/`\n5. Set executable permissions: `sudo chmod +x /usr/local/bin/ttyd`\n6. Verify installation: `/usr/local/bin/ttyd --version`\n7. Clean up temporary directory: `rm -rf ~/tmp/ttyd-install`",
+            "status": "done",
+            "testStrategy": "Execute ttyd with --help flag to verify proper installation, check binary architecture with `file /usr/local/bin/ttyd`, ensure it shows ARM aarch64 executable"
+          },
+          {
+            "id": 2,
+            "title": "Create and Configure Systemd Service",
+            "description": "Set up ttyd as a systemd service with proper user permissions, automatic restart, and initial configuration parameters",
+            "dependencies": [
+              "6.1"
+            ],
+            "details": "1. Create systemd service file: `sudo nano /etc/systemd/system/ttyd.service`\n2. Add service configuration:\n```\n[Unit]\nDescription=ttyd Web Terminal Server\nAfter=network.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/ttyd -p 7681 -c ubuntu:password -t fontSize=16 -t \"theme={'background':'#1e1e1e','foreground':'#d4d4d4','cursor':'#ffffff'}\" -t enableZmodem=true -t enableTrzsz=true /bin/bash\nRestart=always\nRestartSec=10\nUser=ubuntu\nGroup=ubuntu\nEnvironment=\"TERM=xterm-256color\"\n\n[Install]\nWantedBy=multi-user.target\n```\n3. Reload systemd daemon: `sudo systemctl daemon-reload`\n4. Enable service for auto-start: `sudo systemctl enable ttyd.service`\n5. Create log directory: `sudo mkdir -p /var/log/ttyd && sudo chown ubuntu:ubuntu /var/log/ttyd`",
+            "status": "done",
+            "testStrategy": "Check service status with `systemctl status ttyd`, verify service is enabled with `systemctl is-enabled ttyd`, test manual start/stop operations"
+          },
+          {
+            "id": 3,
+            "title": "Implement Mobile-Optimized Interface",
+            "description": "Configure ttyd with mobile-friendly CSS customizations and touch-optimized settings for better usability on small screens",
+            "dependencies": [
+              "6.2"
+            ],
+            "details": "1. Create custom CSS directory: `sudo mkdir -p /var/www/ttyd`\n2. Create mobile-optimized CSS file `/var/www/ttyd/mobile.css`:\n```css\n/* Mobile optimization */\nbody { \n  font-size: 16px !important;\n  -webkit-text-size-adjust: 100%;\n  margin: 0;\n  padding: 0;\n}\n.terminal { \n  touch-action: none;\n  -webkit-touch-callout: none;\n  -webkit-user-select: none;\n}\n#terminal-container { \n  height: 100vh;\n  width: 100vw;\n  position: fixed;\n  top: 0;\n  left: 0;\n}\n/* Virtual keyboard support */\n.xterm-helper-textarea {\n  position: fixed !important;\n  left: -9999px !important;\n}\n/* Improve button sizes for touch */\n.xterm-decoration {\n  min-height: 44px;\n}\n```\n3. Update systemd service to include CSS: Add `-t customCSS=/var/www/ttyd/mobile.css` to ExecStart\n4. Configure touch gestures: Add `-t enableSixel=false -t scrollback=5000` for better mobile performance\n5. Set viewport meta tag support: Add `-t \"titleFixed=Mobile Terminal\"`",
+            "status": "done",
+            "testStrategy": "Access terminal from iPhone Safari and Android Chrome, verify font size is readable without zooming, test touch scrolling and text selection, verify virtual keyboard appears correctly"
+          },
+          {
+            "id": 4,
+            "title": "Configure SSL and Authentication",
+            "description": "Set up HTTPS with self-signed certificates and implement basic authentication for secure remote access",
+            "dependencies": [
+              "6.3"
+            ],
+            "details": "1. Generate self-signed SSL certificate:\n```bash\nsudo mkdir -p /etc/ttyd/ssl\nsudo openssl req -x509 -newkey rsa:4096 -keyout /etc/ttyd/ssl/key.pem -out /etc/ttyd/ssl/cert.pem -days 365 -nodes -subj \"/CN=mobile-terminal\"\nsudo chmod 600 /etc/ttyd/ssl/*.pem\nsudo chown ubuntu:ubuntu /etc/ttyd/ssl/*.pem\n```\n2. Create password file with bcrypt hash:\n```bash\nsudo apt install -y apache2-utils\nsudo htpasswd -cB /etc/ttyd/.htpasswd mobile\nsudo chmod 640 /etc/ttyd/.htpasswd\nsudo chown ubuntu:ubuntu /etc/ttyd/.htpasswd\n```\n3. Update systemd service for SSL:\n   - Change port: `-p 8443`\n   - Add SSL flags: `--ssl --ssl-cert /etc/ttyd/ssl/cert.pem --ssl-key /etc/ttyd/ssl/key.pem`\n   - Update auth: `-c @/etc/ttyd/.htpasswd`\n4. Configure UFW firewall: `sudo ufw allow 8443/tcp comment 'ttyd-ssl'`\n5. Add rate limiting with fail2ban configuration",
+            "status": "done",
+            "testStrategy": "Test HTTPS access on port 8443, verify certificate warnings appear, confirm basic auth prompt works, test wrong password rejection, verify encrypted connection in browser dev tools"
+          },
+          {
+            "id": 5,
+            "title": "Setup Auto-Launch Claude CLI Configuration",
+            "description": "Configure ttyd to automatically launch Claude Code CLI in interactive mode upon connection with proper environment setup",
+            "dependencies": [
+              "6.4"
+            ],
+            "details": "1. Create Claude CLI wrapper script `/home/ubuntu/bin/claude-terminal.sh`:\n```bash\n#!/bin/bash\n# Set terminal environment\nexport TERM=xterm-256color\nexport CLAUDE_TERMINAL=true\nexport PATH=/usr/local/bin:$PATH\n\n# Welcome message\necho \"==================================\"\necho \" Mobile Claude Terminal Ready\"\necho \" Connected from: ${SSH_CLIENT%% *}\"\necho \"==================================\"\necho \"\"\n\n# Change to projects directory\ncd ~/projects/active 2>/dev/null || cd ~\n\n# Launch Claude CLI in interactive mode\nexec claude --no-history\n```\n2. Make script executable: `chmod +x /home/ubuntu/bin/claude-terminal.sh`\n3. Update ttyd service to use wrapper: Change ExecStart command to end with `/home/ubuntu/bin/claude-terminal.sh`\n4. Create fallback to bash: Add error handling in script to fall back to bash if Claude CLI fails\n5. Configure session persistence: Add `-r 30` flag to ttyd for 30-second reconnection window\n6. Set up logging: Add `--log-file /var/log/ttyd/access.log` for connection monitoring",
+            "status": "done",
+            "testStrategy": "Connect to web terminal and verify Claude CLI launches automatically, test disconnect/reconnect within 30 seconds maintains session, verify fallback to bash works if Claude CLI errors, check logs for connection details"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Implement Nginx Reverse Proxy with SSL",
+        "description": "Setup Nginx as reverse proxy for ttyd with Let's Encrypt SSL certificates for secure mobile access using pi.ssh00n.site domain",
+        "status": "deferred",
+        "dependencies": [
+          6
+        ],
+        "priority": "high",
+        "details": "1. Install Nginx and Certbot:\n   ```bash\n   sudo apt install -y nginx certbot python3-certbot-nginx\n   ```\n2. Configure Nginx site in /etc/nginx/sites-available/ttyd:\n   ```nginx\n   server {\n       listen 80;\n       server_name pi.ssh00n.site;\n       return 301 https://$server_name$request_uri;\n   }\n   \n   server {\n       listen 443 ssl http2;\n       server_name pi.ssh00n.site;\n       \n       location / {\n           proxy_pass http://127.0.0.1:7681;\n           proxy_http_version 1.1;\n           proxy_set_header Upgrade $http_upgrade;\n           proxy_set_header Connection \"upgrade\";\n           proxy_set_header Host $host;\n           proxy_set_header X-Real-IP $remote_addr;\n           proxy_read_timeout 86400;\n       }\n       \n       # Mobile optimizations\n       location /custom.css {\n           alias /var/www/ttyd-custom.css;\n       }\n   }\n   ```\n3. Enable site: `sudo ln -s /etc/nginx/sites-available/ttyd /etc/nginx/sites-enabled/`\n4. Obtain SSL certificate: `sudo certbot --nginx -d pi.ssh00n.site`\n5. Setup auto-renewal: `sudo systemctl enable certbot.timer`\n6. Configure HTTP Basic Auth for additional security",
+        "testStrategy": "Test HTTPS access from mobile browser, verify SSL certificate validity, check WebSocket upgrade works properly, test auto-renewal dry run, monitor Nginx access/error logs, verify no HTTP access is possible",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Install and Configure Nginx Web Server",
+            "description": "Install Nginx web server and perform initial configuration for reverse proxy setup",
+            "status": "done",
+            "dependencies": [],
+            "details": "Execute 'sudo apt update && sudo apt install -y nginx' to install Nginx. Verify installation with 'nginx -v'. Check default Nginx service status with 'sudo systemctl status nginx'. Backup default configuration with 'sudo cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.backup'. Remove default site symlink with 'sudo rm /etc/nginx/sites-enabled/default' to prevent conflicts. Test Nginx configuration syntax with 'sudo nginx -t' to ensure no errors exist.",
+            "testStrategy": "Verify Nginx is running with 'sudo systemctl is-active nginx'. Test local access with 'curl http://localhost' to confirm web server responds. Check error logs in /var/log/nginx/error.log for any issues. Ensure port 80 is listening with 'sudo netstat -tlnp | grep :80'."
+          },
+          {
+            "id": 2,
+            "title": "Create Nginx Reverse Proxy Configuration for ttyd",
+            "description": "Configure Nginx as a reverse proxy for ttyd WebSocket terminal with proper headers and timeouts for pi.ssh00n.site domain",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "details": "Create configuration file at /etc/nginx/sites-available/ttyd with the provided server blocks using pi.ssh00n.site domain. Configure HTTP to HTTPS redirect on port 80. Set up HTTPS server block on port 443 with proxy_pass to http://127.0.0.1:7681. Include critical WebSocket headers: 'proxy_set_header Upgrade $http_upgrade' and 'proxy_set_header Connection \"upgrade\"'. Set proxy_read_timeout to 86400 for long-running terminal sessions. Add mobile CSS optimization location block. Create symlink with 'sudo ln -s /etc/nginx/sites-available/ttyd /etc/nginx/sites-enabled/'.",
+            "testStrategy": "Validate configuration with 'sudo nginx -t'. Test ttyd connectivity through Nginx proxy on localhost. Verify WebSocket upgrade headers are properly set using browser developer tools. Check Nginx access logs for successful proxy connections."
+          },
+          {
+            "id": 3,
+            "title": "Install Certbot and Obtain SSL Certificate",
+            "description": "Install Let's Encrypt Certbot and obtain SSL certificate for pi.ssh00n.site domain via Cloudflare",
+            "status": "in-progress",
+            "dependencies": [
+              2
+            ],
+            "details": "Install Certbot and Nginx plugin with 'sudo apt install -y certbot python3-certbot-nginx'. Ensure domain pi.ssh00n.site resolves to correct IP through Cloudflare DNS before proceeding. Since domain uses Cloudflare, verify DNS propagation with 'dig pi.ssh00n.site' from external source. Run 'sudo certbot --nginx -d pi.ssh00n.site' to obtain certificate. Choose option to redirect HTTP to HTTPS when prompted. Certbot will automatically modify Nginx configuration to include SSL directives. Verify certificate installation with 'sudo certbot certificates'. Check that ports 80 and 443 are accessible from internet for certificate validation.\n<info added on 2025-08-07T02:01:07.313Z>\nIMPORTANT: Cloudflare proxy mode (orange cloud) blocks Let's Encrypt HTTP-01 challenge because traffic is routed through Cloudflare's servers instead of directly to your server. Two solutions: 1) Temporarily disable Cloudflare proxy by clicking orange cloud to make it grey in Cloudflare dashboard for pi.ssh00n.site during certificate generation, then re-enable after success. 2) Use DNS-01 challenge method instead with 'sudo certbot certonly --dns-cloudflare -d pi.ssh00n.site' after installing python3-certbot-dns-cloudflare plugin and configuring Cloudflare API credentials in /etc/letsencrypt/cloudflare.ini. DNS method allows keeping proxy enabled but requires API access.\n</info added on 2025-08-07T02:01:07.313Z>",
+            "testStrategy": "Test HTTPS access using 'curl -I https://pi.ssh00n.site' from external network. Verify certificate validity with 'echo | openssl s_client -connect pi.ssh00n.site:443 2>/dev/null | openssl x509 -noout -dates'. Check SSL Labs rating at https://www.ssllabs.com/ssltest/. Ensure no SSL warnings appear in mobile browsers. Verify Cloudflare is properly proxying the connection."
+          },
+          {
+            "id": 4,
+            "title": "Configure SSL Auto-Renewal and Certificate Management",
+            "description": "Setup automatic SSL certificate renewal with Certbot timer and configure renewal hooks for pi.ssh00n.site",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "details": "Enable Certbot systemd timer with 'sudo systemctl enable certbot.timer' and start it with 'sudo systemctl start certbot.timer'. Verify timer status with 'sudo systemctl status certbot.timer'. Test renewal process with dry run: 'sudo certbot renew --dry-run'. Create post-renewal hook script at /etc/letsencrypt/renewal-hooks/deploy/nginx-reload.sh containing '#!/bin/bash\\nsystemctl reload nginx'. Make executable with 'chmod +x /etc/letsencrypt/renewal-hooks/deploy/nginx-reload.sh'. Configure renewal to run twice daily by checking /etc/systemd/system/timers.target.wants/certbot.timer. Note: Cloudflare may cache certificate changes, so consider setting appropriate cache settings.",
+            "testStrategy": "Verify timer is active with 'systemctl list-timers | grep certbot'. Run manual renewal test with 'sudo certbot renew --dry-run' to ensure no errors. Check renewal configuration in /etc/letsencrypt/renewal/pi.ssh00n.site.conf. Monitor /var/log/letsencrypt/letsencrypt.log for renewal attempts. Set calendar reminder to verify renewal works after 60 days."
+          },
+          {
+            "id": 5,
+            "title": "Implement HTTP Basic Authentication for Additional Security",
+            "description": "Add password protection layer using HTTP Basic Auth for enhanced security on mobile access to pi.ssh00n.site",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "details": "Install Apache utilities for htpasswd: 'sudo apt install -y apache2-utils'. Create password file with 'sudo htpasswd -c /etc/nginx/.htpasswd pi-user' and set strong password. Add auth directives to Nginx site configuration within location block: 'auth_basic \"Raspberry Pi Terminal\"; auth_basic_user_file /etc/nginx/.htpasswd;'. Optionally create multiple users for different access levels. Set proper permissions with 'sudo chmod 600 /etc/nginx/.htpasswd' and 'sudo chown www-data:www-data /etc/nginx/.htpasswd'. Reload Nginx with 'sudo systemctl reload nginx'.",
+            "testStrategy": "Test authentication prompt appears when accessing https://pi.ssh00n.site. Verify incorrect credentials are rejected with 401 response. Test multiple user accounts if created. Check auth attempts in /var/log/nginx/access.log. Verify mobile browsers properly handle Basic Auth prompts. Test password change with 'htpasswd' command works correctly."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Create Auto-Start Scripts and Aliases",
+        "description": "Develop bash scripts and aliases for automatic Claude CLI startup and efficient project navigation",
+        "details": "1. Create ~/.bashrc customizations:\n   ```bash\n   # Claude CLI aliases\n   alias cc='claude chat'\n   alias ccp='claude chat --project .'\n   alias ccnew='~/bin/claude-init.sh'\n   \n   # Project navigation\n   alias cdp='cd ~/projects/active'\n   alias cdpa='cd ~/projects/archive'\n   \n   # Quick project switcher\n   function cproject() {\n       cd ~/projects/active/$1 && claude chat --project .\n   }\n   ```\n2. Create auto-start script /home/ubuntu/.claude-autostart.sh:\n   ```bash\n   #!/bin/bash\n   clear\n   echo \"==================================\"\n   echo \"Claude Code Mobile Dev Environment\"\n   echo \"==================================\"\n   echo \"Host: $(hostname -I | awk '{print $1}')\"\n   echo \"Projects: $(ls ~/projects/active | wc -l) active\"\n   echo \"\"\n   echo \"Commands:\"\n   echo \"  cc      - Start Claude chat\"\n   echo \"  ccp     - Claude chat in current project\"\n   echo \"  ccnew   - Create new project\"\n   echo \"  cproject [name] - Switch to project\"\n   echo \"\"\n   cd ~/projects/active\n   ```\n3. Configure ttyd to run autostart script\n4. Create project template system in ~/projects/templates/",
+        "testStrategy": "Test all aliases work correctly, verify auto-start displays properly on mobile, test project switching functionality, ensure scripts work in both SSH and web terminal, verify no conflicts with existing commands",
+        "priority": "medium",
+        "dependencies": [
+          5,
+          6
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Claude CLI Alias Configuration in .bashrc",
+            "description": "Set up bash aliases for Claude CLI commands and project navigation shortcuts in the user's .bashrc file",
+            "dependencies": [],
+            "details": "Edit ~/.bashrc to add the following aliases:\n- 'cc' for 'claude chat'\n- 'ccp' for 'claude chat --project .'\n- 'ccnew' for '~/bin/claude-init.sh'\n- 'cdp' for navigating to active projects\n- 'cdpa' for navigating to archived projects\n- 'cproject' function for quick project switching with Claude CLI integration\n\nEnsure aliases are properly escaped and test each alias after sourcing .bashrc. Add comments to explain each alias purpose for future reference.",
+            "status": "done",
+            "testStrategy": "Source .bashrc and test each alias individually. Verify 'cc' launches Claude chat, 'ccp' works in a project directory, navigation aliases change directories correctly, and 'cproject' function switches to project and starts Claude CLI. Test with invalid project names to ensure graceful handling."
+          },
+          {
+            "id": 2,
+            "title": "Develop Claude Auto-Start Script",
+            "description": "Create the main auto-start script that displays system information and available commands when accessing the Pi via ttyd",
+            "dependencies": [
+              "8.1"
+            ],
+            "details": "Create /home/ubuntu/.claude-autostart.sh with:\n- Shebang and proper permissions (755)\n- Clear screen and display formatted header\n- Show hostname IP address using hostname -I\n- Count and display number of active projects\n- List all available Claude CLI aliases and their purposes\n- Set working directory to ~/projects/active\n- Add error handling for missing directories\n- Include color codes for better mobile visibility\n- Add version number and last update timestamp",
+            "status": "done",
+            "testStrategy": "Execute script manually and verify output formatting. Test IP address detection on different network configurations. Verify project counting works with 0, 1, and multiple projects. Check script execution time is under 1 second. Test on mobile screen sizes for readability."
+          },
+          {
+            "id": 3,
+            "title": "Configure ttyd for Auto-Start Integration",
+            "description": "Set up ttyd web terminal to automatically run the Claude auto-start script on connection",
+            "dependencies": [
+              "8.2"
+            ],
+            "details": "Modify ttyd systemd service or startup configuration to:\n- Execute ~/.claude-autostart.sh on new connections\n- Ensure proper environment variables are loaded\n- Configure ttyd to use bash as the shell\n- Set appropriate terminal size defaults for mobile\n- Add reconnection handling to re-run script\n- Configure ttyd logging for debugging\n- Create wrapper script if needed for proper environment setup\n- Test with multiple simultaneous connections",
+            "status": "done",
+            "testStrategy": "Restart ttyd service and connect via web browser. Verify auto-start script runs immediately on connection. Test multiple connections to ensure each gets fresh script execution. Verify environment variables are properly set. Test disconnection and reconnection scenarios."
+          },
+          {
+            "id": 4,
+            "title": "Create Project Template System",
+            "description": "Develop a template system for quickly creating new Claude CLI projects with predefined structures",
+            "dependencies": [
+              "8.1"
+            ],
+            "details": "Create template directory structure in ~/projects/templates/ with:\n- Basic project template with .claude/, src/, docs/ directories\n- Python project template with venv, requirements.txt\n- Node.js template with package.json, .nvmrc\n- Web project template with HTML/CSS/JS structure\n- Template manifest file listing available templates\n- Create ~/bin/claude-init.sh script that:\n  - Lists available templates\n  - Copies selected template to new project\n  - Initializes git repository\n  - Sets up Claude CLI for the project\n  - Opens Claude chat in the new project",
+            "status": "done",
+            "testStrategy": "Test creating projects from each template. Verify all files are copied correctly with proper permissions. Test claude-init.sh with invalid template names. Ensure git initialization works. Verify Claude CLI recognizes new projects. Test template updates propagate correctly."
+          },
+          {
+            "id": 5,
+            "title": "Create Helper Scripts for Project Management",
+            "description": "Develop additional utility scripts for archiving projects, cleaning cache, and managing Claude CLI resources",
+            "dependencies": [
+              "8.4"
+            ],
+            "details": "Create helper scripts in ~/bin/:\n- claude-archive.sh: Move completed projects to archive with timestamp\n- claude-clean.sh: Clear Claude CLI cache and logs older than 30 days\n- claude-backup.sh: Backup all active projects to external storage\n- claude-restore.sh: Restore projects from backup\n- claude-stats.sh: Show Claude API usage statistics\n- Add these scripts to PATH in .bashrc\n- Create man pages or help documentation for each script\n- Implement proper error handling and confirmation prompts",
+            "status": "done",
+            "testStrategy": "Test each script with edge cases (empty directories, missing files). Verify archive script preserves git history. Test backup/restore cycle maintains all project data. Ensure cleanup script doesn't delete active data. Verify stats script handles API errors gracefully."
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Implement Security Hardening and Access Control",
+        "description": "Apply comprehensive security measures including IP whitelisting, intrusion detection, and audit logging",
+        "details": "1. Configure UFW with geo-blocking:\n   ```bash\n   sudo apt install -y geoip-bin geoip-database\n   # Allow only specific countries\n   sudo ufw allow from 1.0.0.0/8 to any port 2222\n   ```\n2. Setup OSSEC HIDS:\n   ```bash\n   wget -q -O - https://updates.atomicorp.com/installers/atomic | sudo bash\n   sudo apt install -y ossec-hids-server\n   ```\n3. Configure fail2ban for Nginx:\n   ```\n   [nginx-nolimit]\n   enabled = true\n   filter = nginx-limit-req\n   action = iptables-multiport[name=ReqLimit, port=\"http,https\"]\n   logpath = /var/log/nginx/error.log\n   maxretry = 10\n   ```\n4. Implement audit logging:\n   ```bash\n   sudo apt install -y auditd\n   sudo auditctl -w /home/ubuntu/projects -p wa\n   ```\n5. Create security monitoring script\n6. Setup log rotation and centralized logging\n7. Configure AppArmor profiles for ttyd and claude",
+        "testStrategy": "Perform penetration testing with nmap and nikto, verify fail2ban blocks after failed attempts, test audit logs capture file changes, simulate DDoS and verify protection works, check all logs are rotating properly",
+        "priority": "high",
+        "dependencies": [
+          7
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Configure UFW Firewall with Geo-blocking",
+            "description": "Set up UFW firewall with country-based IP restrictions and essential port configurations",
+            "dependencies": [],
+            "details": "Install geoip packages with 'sudo apt install -y geoip-bin geoip-database geoipupdate'. Configure UFW rules to allow SSH (port 2222), HTTPS (443), and HTTP (80) only from specific countries. Create custom UFW application profiles for ttyd and other services. Set up geoip database auto-update via cron. Configure default deny policy for all other traffic. Test geo-blocking effectiveness using VPN from restricted countries.",
+            "status": "done",
+            "testStrategy": "Verify UFW status with 'sudo ufw status verbose', test connections from allowed and blocked countries using VPN, check geoip database updates in logs, attempt connections to all configured ports, verify logging of blocked attempts"
+          },
+          {
+            "id": 2,
+            "title": "Install and Configure OSSEC HIDS",
+            "description": "Deploy OSSEC Host Intrusion Detection System for real-time security monitoring",
+            "dependencies": [
+              "9.1"
+            ],
+            "details": "Install OSSEC server using Atomic repository: 'wget -q -O - https://updates.atomicorp.com/installers/atomic | sudo bash && sudo apt install -y ossec-hids-server'. Configure OSSEC rules for monitoring SSH attempts, file integrity checking on critical directories (/etc, /home/ubuntu/projects), and real-time alerts. Set up email notifications for critical events. Create custom rules for ttyd and Claude CLI specific activities. Configure active response for automatic threat mitigation.",
+            "status": "done",
+            "testStrategy": "Simulate intrusion attempts and verify OSSEC detects them, test file integrity monitoring by modifying monitored files, verify email alerts are sent for critical events, test active response blocks malicious IPs, check OSSEC logs for proper operation"
+          },
+          {
+            "id": 3,
+            "title": "Setup Fail2ban for Nginx and SSH Protection",
+            "description": "Configure fail2ban to protect against brute force and DDoS attacks on web and SSH services",
+            "dependencies": [
+              "9.1"
+            ],
+            "details": "Install fail2ban: 'sudo apt install -y fail2ban'. Create jail.local configuration with custom rules for nginx-nolimit, nginx-req-limit, and sshd. Configure nginx-nolimit jail with 'filter = nginx-limit-req', 'action = iptables-multiport[name=ReqLimit, port=\"http,https\"]', maxretry=10. Set up SSH jail with stricter settings for port 2222. Configure ban times, findtime, and email notifications. Create custom filters for ttyd authentication attempts. Enable persistent banning database.",
+            "status": "done",
+            "testStrategy": "Perform repeated failed SSH attempts and verify IP gets banned, simulate nginx rate limit violations, check fail2ban-client status for active jails, verify iptables rules are created, test unban functionality, monitor fail2ban.log for proper operation"
+          },
+          {
+            "id": 4,
+            "title": "Implement Comprehensive Audit Logging",
+            "description": "Set up system-wide audit logging for security monitoring and compliance",
+            "dependencies": [
+              "9.2"
+            ],
+            "details": "Install auditd: 'sudo apt install -y auditd audispd-plugins'. Configure audit rules to monitor file access in /home/ubuntu/projects with 'sudo auditctl -w /home/ubuntu/projects -p wa'. Add rules for system calls, user authentication, and privilege escalation. Configure audit log rotation and retention policies. Set up ausearch reports for daily security reviews. Create custom audit rules for Claude CLI operations and ttyd sessions. Configure remote logging to backup location.",
+            "status": "done",
+            "testStrategy": "Create, modify, and delete files in monitored directories and verify audit logs capture events, test user authentication logging, run ausearch queries to find specific events, verify log rotation works correctly, test audit system performance impact"
+          },
+          {
+            "id": 5,
+            "title": "Create Security Monitoring Dashboard and Alerts",
+            "description": "Develop centralized security monitoring system with real-time alerts and automated responses",
+            "dependencies": [
+              "9.2",
+              "9.3",
+              "9.4"
+            ],
+            "details": "Create Python monitoring script that aggregates data from UFW logs, OSSEC alerts, fail2ban status, and audit logs. Implement real-time parsing of security events with threat scoring. Set up push notifications via Telegram or Pushover for critical security events. Create web dashboard showing current threat level, recent attacks, and system security status. Implement automated responses like temporary firewall rules for repeated attacks. Set up daily security reports and trend analysis. Configure log shipping to external backup.",
+            "status": "done",
+            "testStrategy": "Trigger various security events and verify they appear in dashboard, test push notifications for different severity levels, verify automated responses activate correctly, check daily report generation, simulate coordinated attack and verify system response"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Build Mobile-Optimized Web Interface",
+        "description": "Create custom mobile-first web interface for Claude CLI with touch-optimized controls and command history",
+        "details": "1. Install web framework dependencies:\n   ```bash\n   sudo apt install -y python3-pip\n   pip3 install flask flask-socketio gunicorn\n   ```\n2. Create Flask app structure:\n   ```python\n   # app.py\n   from flask import Flask, render_template\n   from flask_socketio import SocketIO, emit\n   import subprocess\n   \n   app = Flask(__name__)\n   socketio = SocketIO(app, cors_allowed_origins=\"*\")\n   \n   @app.route('/')\n   def index():\n       return render_template('mobile-claude.html')\n   \n   @socketio.on('command')\n   def handle_command(data):\n       result = subprocess.run(['claude', 'chat', '-m', data['message']], \n                              capture_output=True, text=True)\n       emit('response', {'output': result.stdout})\n   ```\n3. Create mobile HTML template with:\n   - Touch-friendly input area\n   - Command history with swipe navigation\n   - Quick command buttons\n   - Syntax highlighting for code\n   - File upload/download support\n4. Implement PWA features for offline capability\n5. Add voice input support using Web Speech API",
+        "testStrategy": "Test on various iPhone models and screen sizes, verify touch gestures work smoothly, test offline mode functionality, measure response times, verify WebSocket connection stability over mobile networks",
+        "priority": "medium",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set Up Flask Application Infrastructure",
+            "description": "Install dependencies and create the base Flask application with SocketIO support for real-time communication",
+            "dependencies": [],
+            "details": "Install Python web framework dependencies including Flask, Flask-SocketIO, and Gunicorn. Create the main app.py file with Flask application initialization, SocketIO configuration with CORS settings, and basic route structure. Set up the project directory structure with templates/, static/, and src/ folders. Configure Gunicorn for production deployment with appropriate worker settings for WebSocket support.\n<info added on 2025-08-07T10:06:29.356Z>\nCOMPLETED: Successfully implemented Flask application infrastructure with uv package manager, all required dependencies (Flask, Flask-SocketIO, Flask-CORS, Gunicorn), basic app.py with WebSocket and CORS support, complete project structure with templates/ and static/ directories, port 8080 configuration to avoid conflicts, and GitHub Issues #1-#5 created for remaining subtasks. Application is now ready for mobile interface implementation and testing phase.\n</info added on 2025-08-07T10:06:29.356Z>",
+            "status": "done",
+            "testStrategy": "Verify Flask installation with pip list, test basic Flask app startup with flask run, confirm SocketIO connection using browser developer tools, test Gunicorn deployment with multiple workers, verify CORS configuration allows mobile browser connections"
+          },
+          {
+            "id": 2,
+            "title": "Implement Mobile-First HTML/CSS Interface",
+            "description": "Create responsive mobile-optimized HTML template with touch-friendly controls and modern UI components",
+            "dependencies": [
+              "10.1"
+            ],
+            "details": "Design mobile-first HTML template (mobile-claude.html) with viewport meta tags for proper mobile rendering. Implement touch-optimized input area with appropriate font sizes (minimum 16px to prevent zoom). Create swipeable command history panel using CSS transforms and JavaScript touch events. Add quick command buttons bar with commonly used Claude CLI commands. Implement responsive layout that works on various iPhone screen sizes (iPhone SE to Pro Max). Use CSS Grid/Flexbox for fluid layouts and add haptic feedback for touch interactions.",
+            "status": "done",
+            "testStrategy": "Test on iPhone Safari and Chrome browsers, verify touch targets meet 44x44px minimum size, test swipe gestures for command history navigation, validate responsive design on different screen sizes using browser dev tools, ensure no horizontal scrolling occurs"
+          },
+          {
+            "id": 3,
+            "title": "Build Real-Time Command Execution Engine",
+            "description": "Implement WebSocket-based command processing system with proper output streaming and error handling",
+            "dependencies": [
+              "10.1",
+              "10.2"
+            ],
+            "details": "Create SocketIO event handlers for command submission and response streaming. Implement subprocess execution with proper output capture and real-time streaming. Add command queue management to handle multiple requests. Implement syntax highlighting for code blocks in responses using Prism.js or similar. Create file upload/download endpoints for Claude CLI file operations. Add session management to maintain command history per user. Implement proper error handling and timeout management for long-running commands.",
+            "status": "done",
+            "testStrategy": "Test WebSocket connection stability over cellular networks, verify command output streams in real-time, test file upload/download with various file types, simulate network interruptions and verify reconnection, measure latency between command submission and first response byte"
+          },
+          {
+            "id": 4,
+            "title": "Implement Progressive Web App Features",
+            "description": "Add PWA capabilities including offline support, installation prompts, and service worker for caching",
+            "dependencies": [
+              "10.2",
+              "10.3"
+            ],
+            "details": "Create manifest.json with app icons, theme colors, and display settings for standalone mode. Implement service worker for offline caching of static assets and command history. Add install prompt handling for Add to Home Screen functionality. Create offline fallback page with cached command history access. Implement background sync for queued commands when connection restored. Configure cache strategies for different resource types (network-first for API, cache-first for assets).",
+            "status": "pending",
+            "testStrategy": "Test PWA installation on iOS Safari, verify offline mode displays cached content, test service worker registration and update flow, validate manifest.json with Lighthouse PWA audit, test background sync by submitting commands while offline"
+          },
+          {
+            "id": 5,
+            "title": "Integrate Voice Input and Accessibility Features",
+            "description": "Add Web Speech API support for voice commands and ensure full accessibility compliance",
+            "dependencies": [
+              "10.3",
+              "10.4"
+            ],
+            "details": "Implement Web Speech API for voice-to-text input with proper permission handling. Create voice command activation button with visual feedback during recording. Add custom voice commands for common Claude CLI operations. Implement proper ARIA labels and roles for screen reader support. Ensure keyboard navigation works for all interactive elements. Add high contrast mode support and customizable font sizes. Create voice output option using Speech Synthesis API for response reading.",
+            "status": "pending",
+            "testStrategy": "Test voice input on various iPhone models, verify speech recognition accuracy for technical terms, test with VoiceOver screen reader enabled, validate WCAG 2.1 AA compliance using automated tools, test keyboard navigation flow without mouse/touch input"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Setup System Monitoring and Alerting",
+        "description": "Implement comprehensive monitoring solution with mobile push notifications for system health and security events",
+        "details": "1. Install monitoring stack:\n   ```bash\n   sudo apt install -y prometheus node-exporter grafana\n   pip3 install python-telegram-bot pushover\n   ```\n2. Configure Prometheus in /etc/prometheus/prometheus.yml:\n   ```yaml\n   global:\n     scrape_interval: 15s\n   scrape_configs:\n     - job_name: 'node'\n       static_configs:\n         - targets: ['localhost:9100']\n   ```\n3. Create monitoring script /home/ubuntu/monitor/health-check.py:\n   ```python\n   import psutil\n   import requests\n   from pushover import Client\n   \n   def check_system():\n       cpu = psutil.cpu_percent(interval=1)\n       memory = psutil.virtual_memory().percent\n       disk = psutil.disk_usage('/').percent\n       \n       if cpu > 80 or memory > 85 or disk > 90:\n           client = Client(\"user-key\", api_token=\"api-token\")\n           client.send_message(f\"Alert: CPU:{cpu}% MEM:{memory}% DISK:{disk}%\", \n                              title=\"Pi-Claude Alert\")\n   ```\n4. Setup Grafana dashboards for visualization\n5. Configure alerting rules for:\n   - High resource usage\n   - Failed login attempts\n   - Service failures\n   - Network connectivity issues",
+        "testStrategy": "Trigger test alerts and verify push notifications arrive on mobile, simulate high load and verify alerts fire correctly, test Grafana dashboard on mobile browser, verify historical data retention, test alert suppression during maintenance",
+        "priority": "medium",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Install and Configure Monitoring Stack Components",
+            "description": "Install Prometheus, Node Exporter, and Grafana on the Raspberry Pi, along with Python notification libraries",
+            "dependencies": [],
+            "details": "Execute the installation commands to set up the monitoring infrastructure: sudo apt install -y prometheus node-exporter grafana, followed by pip3 install python-telegram-bot pushover. Ensure all services are enabled to start on boot using systemctl enable commands. Verify installations by checking service status and accessing Grafana web interface on port 3000.",
+            "status": "pending",
+            "testStrategy": "Verify each service is running with systemctl status prometheus/node-exporter/grafana, check that Node Exporter metrics are accessible at http://localhost:9100/metrics, confirm Grafana login page loads at http://localhost:3000"
+          },
+          {
+            "id": 2,
+            "title": "Configure Prometheus Data Collection and Scraping",
+            "description": "Set up Prometheus configuration to collect system metrics from Node Exporter and define scraping intervals",
+            "dependencies": [
+              "11.1"
+            ],
+            "details": "Create and configure /etc/prometheus/prometheus.yml with the provided configuration, setting global scrape interval to 15s and configuring the node job to scrape from localhost:9100. Add additional scrape configs for any other exporters or services to monitor. Configure data retention policy and storage location. Restart Prometheus service after configuration changes.",
+            "status": "pending",
+            "testStrategy": "Query Prometheus at http://localhost:9090 to verify Node Exporter metrics are being collected, execute test PromQL queries like 'up' and 'node_cpu_seconds_total', verify data persistence after service restart"
+          },
+          {
+            "id": 3,
+            "title": "Develop Health Check Monitoring Script",
+            "description": "Create Python monitoring script with Pushover integration for real-time system health alerts",
+            "dependencies": [
+              "11.1"
+            ],
+            "details": "Create directory /home/ubuntu/monitor/ and implement health-check.py script with the provided code. Extend the script to include additional checks for: network connectivity (ping test), disk I/O performance, temperature monitoring for Pi hardware, service status checks for critical services. Configure Pushover API credentials securely using environment variables or config file. Add logging functionality to track alert history.",
+            "status": "pending",
+            "testStrategy": "Run script manually and verify it correctly reads system metrics, temporarily lower thresholds to trigger test alerts, confirm Pushover notifications arrive on mobile device, test error handling for API failures"
+          },
+          {
+            "id": 4,
+            "title": "Create Grafana Dashboards and Visualizations",
+            "description": "Design and implement comprehensive Grafana dashboards for system monitoring with mobile-responsive layouts",
+            "dependencies": [
+              "11.2"
+            ],
+            "details": "Configure Prometheus as data source in Grafana. Create dashboards including: System Overview (CPU, Memory, Disk, Network), Service Health (SSH, Nginx, Claude CLI status), Security Events (failed logins, firewall blocks), Performance Metrics (response times, throughput). Import community dashboards for Node Exporter (ID: 1860). Configure dashboard variables for time ranges and filtering. Enable anonymous viewing for mobile access without login.",
+            "status": "pending",
+            "testStrategy": "Access dashboards from mobile browser to verify responsive design, validate all panels display data correctly, test time range selections and auto-refresh, verify dashboard URLs work without authentication if configured"
+          },
+          {
+            "id": 5,
+            "title": "Implement Alerting Rules and Notification Channels",
+            "description": "Configure comprehensive alerting rules in Prometheus and Grafana for all critical system events",
+            "dependencies": [
+              "11.3",
+              "11.4"
+            ],
+            "details": "Create Prometheus alerting rules in /etc/prometheus/alerts.yml for: CPU > 80% for 5 minutes, Memory > 85% for 5 minutes, Disk > 90%, Failed SSH attempts > 5 in 10 minutes, Service down for any critical service. Configure AlertManager for routing. Set up Grafana alert channels for Pushover and email. Create alert panels in dashboards with thresholds. Implement alert suppression rules for scheduled maintenance windows.",
+            "status": "pending",
+            "testStrategy": "Trigger each alert condition artificially (stress-ng for CPU/memory, fill disk with test file, attempt failed SSH logins), verify notifications arrive via all configured channels, test alert resolution notifications, validate suppression during maintenance window"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Create Documentation and Deployment Guide",
+        "description": "Develop comprehensive documentation including setup guides, troubleshooting, and best practices for mobile Claude development",
+        "details": "1. Create documentation structure:\n   ```bash\n   mkdir -p ~/docs/{setup,guides,troubleshooting,api}\n   ```\n2. Write README.md with:\n   - System requirements\n   - Quick start guide\n   - Architecture overview\n   - Security considerations\n3. Create setup automation script:\n   ```bash\n   #!/bin/bash\n   # setup-mobile-claude.sh\n   echo \"Mobile Claude Server Setup v1.0\"\n   # Include all setup steps with error handling\n   ```\n4. Document common issues:\n   - Connection timeouts on mobile networks\n   - SSL certificate renewal\n   - Performance optimization tips\n   - Backup and recovery procedures\n5. Create video tutorials for:\n   - Initial setup process\n   - Mobile usage guide\n   - Troubleshooting common issues\n6. Setup GitHub repository with:\n   - All configuration files\n   - Scripts and automation\n   - Issue templates\n   - CI/CD for updates",
+        "testStrategy": "Have new user follow documentation to setup system, verify all commands and configurations work as documented, test troubleshooting guides resolve actual issues, ensure automation scripts work on fresh Ubuntu install",
+        "priority": "low",
+        "dependencies": [
+          10,
+          11
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Documentation Directory Structure and Templates",
+            "description": "Set up the documentation directory hierarchy and create template files for each documentation type",
+            "dependencies": [],
+            "details": "Execute mkdir -p ~/docs/{setup,guides,troubleshooting,api,assets/{images,videos},templates} to create comprehensive directory structure. Create template files for README.md, SETUP.md, TROUBLESHOOTING.md, API.md, and BEST_PRACTICES.md with standard sections and formatting. Set up .gitignore for documentation-specific files. Create documentation style guide with markdown formatting standards, naming conventions, and screenshot requirements. Initialize documentation versioning system with changelog template.",
+            "status": "pending",
+            "testStrategy": "Verify all directories are created with correct permissions using ls -la ~/docs/. Confirm template files contain proper markdown structure and placeholders. Test that directory structure supports both text and media assets. Validate .gitignore properly excludes temporary files."
+          },
+          {
+            "id": 2,
+            "title": "Write Comprehensive README and Quick Start Guide",
+            "description": "Develop the main README.md with system requirements, architecture overview, and step-by-step quick start instructions",
+            "dependencies": [
+              "12.1"
+            ],
+            "details": "Create README.md with sections for: System Requirements (Ubuntu 22.04+, 4GB RAM, 20GB storage, stable internet), Hardware Compatibility (Raspberry Pi 4/5, x86_64 systems), Quick Start Guide with numbered steps and command blocks, Architecture Overview with ASCII diagram showing SSH/HTTPS flow, Security Considerations including firewall rules and SSL certificates, Performance Requirements and network bandwidth recommendations. Include troubleshooting quick links and support contact information. Add badges for version, status, and license.",
+            "status": "pending",
+            "testStrategy": "Have a new user follow the quick start guide from scratch on a fresh Ubuntu installation. Verify all commands execute without errors. Test that architecture diagram renders correctly in GitHub and local markdown viewers. Validate all internal links work properly."
+          },
+          {
+            "id": 3,
+            "title": "Develop Setup Automation Script with Error Handling",
+            "description": "Create a robust bash script that automates the entire Mobile Claude setup process with comprehensive error handling and rollback capabilities",
+            "dependencies": [
+              "12.1"
+            ],
+            "details": "Write setup-mobile-claude.sh script with: Version detection and compatibility checks, Interactive mode for configuration inputs, Dependency installation (Node.js, nginx, certbot, fail2ban), Network configuration validation, Automatic backup of existing configs, Step-by-step progress indicators with colored output, Error handling with rollback functionality, Post-installation verification tests, Configuration file generation from templates, Logging to ~/setup-mobile-claude.log. Include --dry-run option for testing without making changes.",
+            "status": "pending",
+            "testStrategy": "Run script on fresh Ubuntu 22.04 and 24.04 installations. Test with missing dependencies and verify proper error messages. Simulate network failures during setup and confirm rollback works. Verify script is idempotent and can be safely re-run."
+          },
+          {
+            "id": 4,
+            "title": "Document Common Issues and Solutions",
+            "description": "Create comprehensive troubleshooting documentation covering frequent problems, their symptoms, and step-by-step resolution procedures",
+            "dependencies": [
+              "12.1",
+              "12.2"
+            ],
+            "details": "Document solutions for: Connection timeouts on mobile networks (MTU settings, keepalive configurations), SSL certificate renewal failures (certbot troubleshooting, manual renewal steps), Performance issues (nginx tuning, Claude CLI optimization), Authentication problems (API key rotation, session management), Network configuration issues (firewall rules, port forwarding verification), Mobile-specific problems (carrier restrictions, VPN compatibility), Backup and recovery procedures with automated scripts, Log analysis commands and common error patterns. Include decision trees for problem diagnosis.",
+            "status": "pending",
+            "testStrategy": "Reproduce each documented issue in a test environment and verify the solution works. Have users unfamiliar with the system follow troubleshooting steps. Test recovery procedures including full system restore from backup."
+          },
+          {
+            "id": 5,
+            "title": "Create GitHub Repository and CI/CD Pipeline",
+            "description": "Set up a professional GitHub repository with all project files, documentation, and automated deployment workflows",
+            "dependencies": [
+              "12.2",
+              "12.3",
+              "12.4"
+            ],
+            "details": "Initialize GitHub repository 'mobile-claude-server' with: Complete directory structure matching local setup, All configuration files with sensitive data templated, README with installation instructions and badges, Issue templates for bugs and feature requests, Pull request template with checklist, GitHub Actions workflow for: documentation linting, script syntax validation, automated testing of setup script, release automation with changelog generation. Create GitHub Pages site for documentation hosting. Set up branch protection rules and CODEOWNERS file. Configure Dependabot for dependency updates.",
+            "status": "pending",
+            "testStrategy": "Verify GitHub Actions successfully run on push and PR. Test that documentation renders correctly on GitHub Pages. Confirm issue templates appear when creating new issues. Validate automated releases create proper tags and changelogs."
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Add Basic Authentication to ttyd Web Terminal",
+        "description": "Implement username and password protection for the ttyd web terminal service on port 7681 to prevent unauthorized access.",
+        "details": "1. Stop the current ttyd service:\n   ```bash\n   sudo systemctl stop ttyd\n   ```\n2. Update ttyd systemd service configuration in /etc/systemd/system/ttyd.service to include authentication:\n   ```\n   [Unit]\n   Description=ttyd Web Terminal with Authentication\n   After=network.target\n   \n   [Service]\n   Type=simple\n   ExecStart=/usr/local/bin/ttyd -p 7681 -c ubuntu:secure_password123 -t fontSize=16 -t \"theme={'background':'#1e1e1e'}\" bash\n   Restart=always\n   User=ubuntu\n   \n   [Install]\n   WantedBy=multi-user.target\n   ```\n3. Create a more secure credential file approach:\n   ```bash\n   echo 'ubuntu:$2b$12$AbCdEfGhIjKlMnOpQrStUvWxYz' > /etc/ttyd/credentials\n   sudo chmod 600 /etc/ttyd/credentials\n   sudo chown root:root /etc/ttyd/credentials\n   ```\n4. Update ExecStart to use credential file:\n   ```\n   ExecStart=/usr/local/bin/ttyd -p 7681 -c /etc/ttyd/credentials -t fontSize=16 -t \"theme={'background':'#1e1e1e'}\" bash\n   ```\n5. Reload systemd and restart ttyd service:\n   ```bash\n   sudo systemctl daemon-reload\n   sudo systemctl enable ttyd\n   sudo systemctl start ttyd\n   ```\n6. Update firewall rules to ensure port 7681 is protected:\n   ```bash\n   sudo ufw allow from 192.168.1.0/24 to any port 7681\n   sudo ufw deny 7681\n   ```",
+        "testStrategy": "1. Access web terminal via http://192.168.1.100:7681 and verify authentication prompt appears. 2. Test login with correct credentials (ubuntu/secure_password123) and confirm terminal loads successfully. 3. Test login with incorrect credentials and verify access is denied. 4. Test from mobile devices (iPhone Safari/Chrome) to ensure authentication dialog works properly on touch interfaces. 5. Verify session persistence after successful authentication. 6. Check service status with `sudo systemctl status ttyd` to confirm service is running with authentication enabled. 7. Test concurrent logins to ensure multiple authenticated sessions work correctly. 8. Verify credential file permissions are secure (600) and owned by root. 9. Test authentication timeout behavior and re-authentication requirements.",
+        "status": "done",
+        "dependencies": [
+          6
+        ],
+        "priority": "medium",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-08-05T15:01:52.790Z",
+      "updated": "2025-08-08T01:54:42.622Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
