@@ -193,6 +193,10 @@ def index():
     else:
         return render_template('interactive.html')
 
+@app.route('/mobile')
+def mobile():
+    return render_template('mobile_terminal.html')
+
 @app.route('/health')
 def health():
     return jsonify({
