@@ -262,6 +262,6 @@ def handle_stop_session():
         emit('session_stopped', {'message': 'Session stopped'})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 7681))
     print(f"Starting Interactive Claude on port {port}")
     socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)
