@@ -717,10 +717,13 @@
             currentProject = project;
             localStorage.setItem('currentProject', JSON.stringify(project));
             
-            document.getElementById('currentProjectDisplay').innerHTML = `
-                <div class="project-name">${project.name}</div>
-                <div class="project-path">${project.path}</div>
-            `;
+            const display = document.getElementById('currentProjectDisplay');
+            if (display) {
+                display.innerHTML = `
+                    <div class="project-name">${project.name}</div>
+                    <div class="project-path">${project.path}</div>
+                `;
+            }
             
             // Restart session with new project if active
             if (sessionActive) {
@@ -730,12 +733,22 @@
         
         function renderProjects() {
             const list = document.getElementById('projectList');
+            if (!list) return;
+            
             list.innerHTML = projects.map(p => `
-                <div class="project-item" onclick='selectProject(${JSON.stringify(p)})'>
+                <div class="project-item" data-project='${JSON.stringify(p).replace(/'/g, "&apos;")}'>
                     <div class="project-name">${p.name}</div>
                     <div class="project-path">${p.path}</div>
                 </div>
             `).join('');
+            
+            // Add click handlers
+            list.querySelectorAll('.project-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const projectData = JSON.parse(this.getAttribute('data-project'));
+                    selectProject(projectData);
+                });
+            });
         }
         
         // Load saved data
@@ -749,7 +762,14 @@
             const savedCurrent = localStorage.getItem('currentProject');
             if (savedCurrent) {
                 currentProject = JSON.parse(savedCurrent);
-                selectProject(currentProject);
+                // Don't call selectProject here to avoid duplicate rendering
+                const display = document.getElementById('currentProjectDisplay');
+                if (display) {
+                    display.innerHTML = `
+                        <div class="project-name">${currentProject.name}</div>
+                        <div class="project-path">${currentProject.path}</div>
+                    `;
+                }
             }
         }
         
@@ -791,12 +811,25 @@
             }
         }
         
-        // Initialize
-        window.addEventListener('resize', fitTerminal);
-        window.addEventListener('load', () => {
+        // Initialize only once
+        let initialized = false;
+        
+        function initialize() {
+            if (initialized) return;
+            initialized = true;
+            
             loadSavedData();
             setTimeout(fitTerminal, 100);
-        });
+        }
+        
+        window.addEventListener('resize', fitTerminal);
+        
+        // Use DOMContentLoaded instead of load to prevent multiple initializations
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initialize);
+        } else {
+            initialize();
+        }
         
         // Prevent zoom on double tap
         document.addEventListener('touchstart', (e) => {
