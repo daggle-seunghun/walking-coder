@@ -528,41 +528,57 @@
         // Initialize terminal
         term.open(document.getElementById('terminal-container'));
         
-        // Socket events
-        socket.on('connect', () => {
+        // Remove all existing listeners first to prevent duplicates
+        socket.removeAllListeners('connect');
+        socket.removeAllListeners('disconnect');
+        socket.removeAllListeners('session_started');
+        socket.removeAllListeners('session_stopped');
+        socket.removeAllListeners('output');
+        socket.removeAllListeners('error');
+        
+        // Socket events - register only once
+        socket.once('connect', () => {
             console.log('Connected to server');
             updateStatus(true);
-        });
-        
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            updateStatus(false);
-            sessionActive = false;
-            updateSessionButton();
-        });
-        
-        socket.on('session_started', (data) => {
-            console.log('Session started');
-            sessionActive = true;
-            updateSessionButton();
-            term.clear();
-            term.focus();
-            closeSidebar();
-        });
-        
-        socket.on('session_stopped', (data) => {
-            console.log('Session stopped');
-            sessionActive = false;
-            updateSessionButton();
-            term.write('\r\n[Session ended]\r\n');
-        });
-        
-        socket.on('output', (data) => {
-            term.write(data.data);
-        });
-        
-        socket.on('error', (data) => {
-            term.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
+            
+            // Register other events only after connection
+            socket.off('disconnect').on('disconnect', () => {
+                console.log('Disconnected from server');
+                updateStatus(false);
+                sessionActive = false;
+                updateSessionButton();
+            });
+            
+            socket.off('session_started').on('session_started', (data) => {
+                console.log('Session started');
+                sessionActive = true;
+                updateSessionButton();
+                term.clear();
+                term.focus();
+                closeSidebar();
+            });
+            
+            socket.off('session_stopped').on('session_stopped', (data) => {
+                console.log('Session stopped');
+                sessionActive = false;
+                updateSessionButton();
+                term.write('\r\n[Session ended]\r\n');
+            });
+            
+            socket.off('output').on('output', (data) => {
+                // Check if this output is for our session
+                if (data.session_id && data.session_id !== socket.id) {
+                    console.log('Ignoring output for different session:', data.session_id);
+                    return;
+                }
+                // Add timestamp to debug duplicates
+                console.log('Output received:', new Date().getTime(), 'for session:', socket.id);
+                term.write(data.data);
+            });
+            
+            socket.off('error').on('error', (data) => {
+                term.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
+            });
         });
         
         // Terminal input

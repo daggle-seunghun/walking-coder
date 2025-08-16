@@ -98,6 +98,8 @@ class InteractiveClaudeSession:
     def _read_output(self):
         """Read output from Claude and send to client"""
         buffer = ""
+        last_emit_time = 0
+        
         while self.running:
             try:
                 # Use select to wait for data
@@ -109,25 +111,30 @@ class InteractiveClaudeSession:
                         output = data.decode('utf-8', errors='replace')
                         buffer += output
                         
-                        # Send output to client
-                        socketio.emit('output', {
-                            'data': output
-                        }, room=self.session_id)
+                        # Debounce emits to prevent duplicates (minimum 10ms between emits)
+                        current_time = time.time()
+                        if current_time - last_emit_time > 0.01:
+                            # Send output to specific client only
+                            socketio.emit('output', {
+                                'data': output,
+                                'session_id': self.session_id
+                            }, room=self.session_id, skip_sid=None)
+                            last_emit_time = current_time
                         
-                        # Debug log
+                        # Debug log with session ID
                         for line in output.split('\n'):
                             if line.strip():
-                                print(f"[Claude Output] {line[:100]}")
+                                print(f"[Session {self.session_id[:8]}] {line[:100]}")
                     else:
-                        print("No data received, Claude may have exited")
+                        print(f"No data received for session {self.session_id[:8]}, Claude may have exited")
                         break
                         
             except OSError as e:
                 if e.errno == 5:  # Input/output error
-                    print("PTY closed")
+                    print(f"PTY closed for session {self.session_id[:8]}")
                     break
             except Exception as e:
-                print(f"Error reading output: {e}")
+                print(f"Error reading output for session {self.session_id[:8]}: {e}")
                 break
         
         self.stop()
